@@ -48,6 +48,17 @@ Do NOT use it if you need:
 For those → Celery, Kafka, or RabbitMQ.
 
 ---
+> ⚠️ **Status: Early testing release**
+>
+> This project is currently published for testing and feedback purposes.
+> APIs and behavior may change before a stable release.
+
+---
+## Stability
+- Suitable for learning, experiments, and small projects
+- Not recommended for production yet
+
+---
 
 ## 📦 Installation
 
