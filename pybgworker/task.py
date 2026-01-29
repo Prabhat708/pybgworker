@@ -8,6 +8,9 @@ TASK_REGISTRY = {}
 queue = SQLiteQueue()
 
 def task(name=None, retries=0, retry_delay=0, retry_for=(Exception,)):
+    if name is None:
+        raise ValueError("Task name is required to avoid __main__ issues")
+
     def decorator(func):
         task_name = name or f"{func.__module__}.{func.__name__}"
 

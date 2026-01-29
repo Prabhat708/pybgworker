@@ -1,7 +1,7 @@
 from pybgworker import task
 import time
 
-@task()
+@task(name="examples.basic.say_hello")
 def say_hello(name):
     time.sleep(2)
     print(f"👋 Hello, {name}")
