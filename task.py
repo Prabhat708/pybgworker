@@ -1,4 +1,5 @@
 from functools import wraps
+from datetime import timedelta
 from .sqlite_queue import SQLiteQueue
 from .utils import generate_id, dumps, now
 from .state import TaskState
@@ -6,30 +7,45 @@ from .state import TaskState
 TASK_REGISTRY = {}
 queue = SQLiteQueue()
 
-def task(retries: int = 0, retry_delay: int = 0):
+def task(name=None, retries=0, retry_delay=0, retry_for=(Exception,)):
     def decorator(func):
-        task_name = f"{func.__module__}.{func.__name__}"
-        TASK_REGISTRY[task_name] = func
+        task_name = name or f"{func.__module__}.{func.__name__}"
+
+        TASK_REGISTRY[task_name] = {
+            "func": func,
+            "retry_delay": retry_delay,
+            "retry_for": retry_for,
+        }
 
         @wraps(func)
-        def delay(*args, **kwargs):
-            task_id = generate_id()
+        def delay(*args, countdown=None, eta=None, **kwargs):
+            run_at = now()
+            if countdown:
+                run_at += timedelta(seconds=countdown)
+            if eta:
+                run_at = eta
+
             task = {
-                "id": task_id,
+                "id": generate_id(),
                 "name": task_name,
                 "args": dumps(args),
                 "kwargs": dumps(kwargs),
                 "status": TaskState.QUEUED.value,
-                "retries_left": retries,
-                "run_at": now().isoformat(),
+                "attempt": 0,
+                "max_retries": retries,
+                "run_at": run_at.isoformat(),
                 "locked_by": None,
                 "locked_at": None,
                 "last_error": None,
+                "result": None,
                 "created_at": now().isoformat(),
                 "updated_at": now().isoformat(),
+                "finished_at": None,
             }
+
             queue.enqueue(task)
-            return task_id
+            from .result import AsyncResult
+            return AsyncResult(task["id"])
 
         func.delay = delay
         return func

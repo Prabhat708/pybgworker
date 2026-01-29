@@ -7,14 +7,12 @@ class TaskState(str, Enum):
     FAILED = "failed"
     SUCCESS = "success"
 
-
 ALLOWED_TRANSITIONS = {
     TaskState.QUEUED: {TaskState.RUNNING},
     TaskState.RUNNING: {TaskState.SUCCESS, TaskState.RETRYING, TaskState.FAILED},
-    TaskState.RETRYING: {TaskState.QUEUED},
+    TaskState.RETRYING: {TaskState.RUNNING},
 }
 
-
 def validate_transition(old, new):
-    if new not in ALLOWED_TRANSITIONS.get(old, set()):
-        raise ValueError(f"Invalid state transition: {old} -> {new}")
+    if new not in ALLOWED_TRANSITIONS.get(TaskState(old), set()):
+        raise ValueError(f"Invalid transition {old} → {new}")
