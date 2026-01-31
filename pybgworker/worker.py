@@ -82,9 +82,15 @@ def run_worker():
         # ---- TIMEOUT CASE ----
         if process.is_alive():
             process.terminate()
+
+            # check if cancelled
+            info = backend.get_task(task["id"])
+            if info["status"] == "cancelled":
+                print(f"🛑 Cancelled {task['id']}")
+                continue
+
             queue.fail(task["id"], "Task timeout")
-            print(f"⏱ Timeout {task['id']}")
-            continue
+
 
         # ---- PROCESS RETURNED ----
         if result_queue.empty():
