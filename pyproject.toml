@@ -36,7 +36,9 @@ classifiers = [
     "Operating System :: OS Independent"
 ]
 
-dependencies = []
+dependencies = [
+  "croniter>=1.4.0",
+]
 
 [project.urls]
 Homepage = "https://github.com/prabhat708/pybgworker"
