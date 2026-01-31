@@ -8,12 +8,13 @@ from .task import TASK_REGISTRY
 from .config import WORKER_NAME, POLL_INTERVAL
 from .utils import loads, get_conn, now
 from .backends import SQLiteBackend
+from .scheduler import run_scheduler  # ⭐ NEW
 
 
 queue = SQLiteQueue()
 backend = SQLiteBackend()
 
-TASK_TIMEOUT = 150  # seconds (make configurable later)
+TASK_TIMEOUT = 150  # seconds
 
 
 def heartbeat():
@@ -34,10 +35,6 @@ def heartbeat():
 
 
 def run_task(func, args, kwargs, result_queue):
-    """
-    Runs inside subprocess.
-    Sends back ("success", result) OR ("error", traceback)
-    """
     try:
         result = func(*args, **kwargs)
         result_queue.put(("success", result))
@@ -48,8 +45,11 @@ def run_task(func, args, kwargs, result_queue):
 def run_worker():
     print(f"🚀 Worker {WORKER_NAME} started")
 
-    # start heartbeat thread
+    # heartbeat thread
     threading.Thread(target=heartbeat, daemon=True).start()
+
+    # ⭐ cron scheduler thread
+    threading.Thread(target=run_scheduler, daemon=True).start()
 
     while True:
         task = queue.fetch_next(WORKER_NAME)
@@ -79,11 +79,10 @@ def run_worker():
         process.start()
         process.join(TASK_TIMEOUT)
 
-        # ---- TIMEOUT CASE ----
+        # ---- timeout ----
         if process.is_alive():
             process.terminate()
 
-            # check if cancelled
             info = backend.get_task(task["id"])
             if info["status"] == "cancelled":
                 print(f"🛑 Cancelled {task['id']}")
@@ -91,8 +90,7 @@ def run_worker():
 
             queue.fail(task["id"], "Task timeout")
 
-
-        # ---- PROCESS RETURNED ----
+        # ---- no result ----
         if result_queue.empty():
             queue.fail(task["id"], "Task crashed without result")
             print(f"💥 Crash {task['id']}")
@@ -106,7 +104,6 @@ def run_worker():
             print(f"✅ Success {task['id']}")
 
         else:
-            # retry logic preserved
             if task["attempt"] < task["max_retries"]:
                 queue.reschedule(task["id"], retry_delay)
                 print(f"🔁 Retry {task['attempt']+1}/{task['max_retries']}")

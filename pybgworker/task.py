@@ -9,6 +9,7 @@ TASK_REGISTRY = {}
 queue = SQLiteQueue()
 backend = SQLiteBackend()
 
+
 def task(name=None, retries=0, retry_delay=0, retry_for=(Exception,)):
     if name is None:
         raise ValueError("Task name is required to avoid __main__ issues")
@@ -23,10 +24,12 @@ def task(name=None, retries=0, retry_delay=0, retry_for=(Exception,)):
         }
 
         @wraps(func)
-        def delay(*args, countdown=None, eta=None, **kwargs):
+        def delay(*args, countdown=None, eta=None, priority=5, **kwargs):
             run_at = now()
+
             if countdown:
                 run_at += timedelta(seconds=countdown)
+
             if eta:
                 run_at = eta
 
@@ -39,6 +42,7 @@ def task(name=None, retries=0, retry_delay=0, retry_for=(Exception,)):
                 "attempt": 0,
                 "max_retries": retries,
                 "run_at": run_at.isoformat(),
+                "priority": priority,   # ⭐ NEW
                 "locked_by": None,
                 "locked_at": None,
                 "last_error": None,
@@ -49,9 +53,11 @@ def task(name=None, retries=0, retry_delay=0, retry_for=(Exception,)):
             }
 
             queue.enqueue(task)
+
             from .result import AsyncResult
             return AsyncResult(task["id"], backend=backend)
 
         func.delay = delay
         return func
+
     return decorator

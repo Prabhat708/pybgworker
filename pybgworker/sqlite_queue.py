@@ -10,6 +10,8 @@ class SQLiteQueue(BaseQueue):
     def __init__(self, db_path=DB_PATH):
         self._init_db()
 
+    # ---------------- DB init ----------------
+
     def _init_db(self):
         with get_conn() as conn:
             conn.execute("""
@@ -22,6 +24,7 @@ class SQLiteQueue(BaseQueue):
                 attempt INTEGER,
                 max_retries INTEGER,
                 run_at TEXT,
+                priority INTEGER DEFAULT 5,
                 locked_by TEXT,
                 locked_at TEXT,
                 last_error TEXT,
@@ -33,8 +36,8 @@ class SQLiteQueue(BaseQueue):
             """)
 
             conn.execute("""
-            CREATE INDEX IF NOT EXISTS idx_tasks_status_runat
-            ON tasks(status, run_at)
+            CREATE INDEX IF NOT EXISTS idx_tasks_priority_runat
+            ON tasks(status, priority, run_at)
             """)
 
             conn.execute("""
@@ -50,10 +53,9 @@ class SQLiteQueue(BaseQueue):
 
     def enqueue(self, task):
         with get_conn() as conn:
-            conn.execute(
-                "INSERT INTO tasks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                tuple(task.values())
-            )
+            conn.execute("""
+                INSERT INTO tasks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """, tuple(task.values()))
             conn.commit()
 
     # ---------------- atomic fetch ----------------
@@ -80,7 +82,7 @@ class SQLiteQueue(BaseQueue):
                             (t.status='running' AND w.last_seen < ?)
                         )
                     AND t.run_at <= ?
-                    ORDER BY t.run_at
+                    ORDER BY t.priority ASC, t.run_at ASC
                     LIMIT 1
                 )
                 RETURNING *
