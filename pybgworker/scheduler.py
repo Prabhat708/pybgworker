@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from .task import queue
 from .utils import generate_id, now, dumps
 from .state import TaskState
+from .logger import log
 
 CRON_REGISTRY = []
 
@@ -16,7 +17,7 @@ def cron(expr):
 
 
 def run_scheduler():
-    print("🕒 Cron scheduler started")
+    log("scheduler_start")
 
     next_run = {}
 
@@ -48,7 +49,7 @@ def run_scheduler():
                 }
 
                 queue.enqueue(task)
-                print(f"⏰ Cron fired: {func.__name__}")
+                log("cron_fired", task_name=func.__name__)
 
                 next_run[expr] = croniter(expr, current).get_next(datetime)
 
