@@ -3,9 +3,11 @@ from datetime import timedelta
 from .sqlite_queue import SQLiteQueue
 from .utils import generate_id, dumps, now
 from .state import TaskState
+from .backends import SQLiteBackend
 
 TASK_REGISTRY = {}
 queue = SQLiteQueue()
+backend = SQLiteBackend()
 
 def task(name=None, retries=0, retry_delay=0, retry_for=(Exception,)):
     if name is None:
@@ -48,7 +50,7 @@ def task(name=None, retries=0, retry_delay=0, retry_for=(Exception,)):
 
             queue.enqueue(task)
             from .result import AsyncResult
-            return AsyncResult(task["id"])
+            return AsyncResult(task["id"], backend=backend)
 
         func.delay = delay
         return func

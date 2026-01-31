@@ -1,5 +1,5 @@
 import os
-
+WORKER_TIMEOUT = 15 
 DB_PATH = os.getenv("PYBGWORKER_DB", "pybgworker.db")
 WORKER_NAME = os.getenv("PYBGWORKER_WORKER_NAME", "worker-1")
 POLL_INTERVAL = float(os.getenv("PYBGWORKER_POLL_INTERVAL", 1.0))

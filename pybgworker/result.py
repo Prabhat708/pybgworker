@@ -1,17 +1,20 @@
-from .sqlite_queue import SQLiteQueue
+import time
+import json
 from .state import TaskState
+from .backends import BaseBackend, SQLiteBackend
+
 
 class AsyncResult:
-    def __init__(self, task_id):
+    def __init__(self, task_id, backend: BaseBackend = None):
         self.task_id = task_id
-        self.queue = SQLiteQueue()
+        self.backend = backend or SQLiteBackend()
 
     def _fetch(self):
-        row = self.queue.conn.execute(
-            "SELECT * FROM tasks WHERE id=?",
-            (self.task_id,)
-        ).fetchone()
-        return dict(row) if row else None
+        return self.backend.get_task(self.task_id)
+
+    @property
+    def task_info(self):
+        return self._fetch()
 
     @property
     def status(self):
@@ -21,7 +24,9 @@ class AsyncResult:
     @property
     def result(self):
         task = self._fetch()
-        return task["result"] if task else None
+        if task and task["result"]:
+            return json.loads(task["result"])
+        return None
 
     @property
     def error(self):
@@ -39,3 +44,21 @@ class AsyncResult:
 
     def failed(self):
         return self.status == TaskState.FAILED.value
+
+    def get(self, timeout=None):
+        start_time = time.time()
+        while True:
+            if self.ready():
+                if self.successful():
+                    return self.result
+                else:
+                    raise Exception(self.error)
+            if timeout and time.time() - start_time > timeout:
+                raise TimeoutError("Timeout waiting for task to complete")
+            time.sleep(0.1)
+
+    def forget(self):
+        self.backend.forget(self.task_id)
+
+    def __repr__(self):
+        return f"<AsyncResult(task_id='{self.task_id}', status='{self.status}')>"
