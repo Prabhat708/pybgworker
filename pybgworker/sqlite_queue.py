@@ -105,7 +105,9 @@ class SQLiteQueue(BaseQueue):
                 UPDATE tasks
                 SET status='success',
                     finished_at=?,
-                    updated_at=?
+                    updated_at=?,
+                    locked_by=NULL,
+                    locked_at=NULL
                 WHERE id=?
             """, (now().isoformat(), now().isoformat(), task_id))
             conn.commit()
@@ -119,7 +121,9 @@ class SQLiteQueue(BaseQueue):
                 SET status='failed',
                     last_error=?,
                     finished_at=?,
-                    updated_at=?
+                    updated_at=?,
+                    locked_by=NULL,
+                    locked_at=NULL
                 WHERE id=?
             """, (error, now().isoformat(), now().isoformat(), task_id))
             conn.commit()
@@ -134,7 +138,24 @@ class SQLiteQueue(BaseQueue):
                 SET status='retrying',
                     attempt=attempt+1,
                     run_at=?,
-                    updated_at=?
+                    updated_at=?,
+                    locked_by=NULL,
+                    locked_at=NULL
                 WHERE id=?
             """, (run_at.isoformat(), now().isoformat(), task_id))
+            conn.commit()
+
+    # ---------------- cancel ----------------
+
+    def cancel(self, task_id):
+        with get_conn() as conn:
+            conn.execute("""
+                UPDATE tasks
+                SET status='cancelled',
+                    finished_at=?,
+                    updated_at=?,
+                    locked_by=NULL,
+                    locked_at=NULL
+                WHERE id=?
+            """, (now().isoformat(), now().isoformat(), task_id))
             conn.commit()

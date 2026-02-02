@@ -10,17 +10,27 @@ queue = SQLiteQueue()
 backend = SQLiteBackend()
 
 
-def task(name=None, retries=0, retry_delay=0, retry_for=(Exception,)):
+def task(
+    name=None,
+    retries=0,
+    retry_delay=0,
+    retry_for=(Exception,),
+    timeout=None,
+    rate_limit=None,
+):
     if name is None:
         raise ValueError("Task name is required to avoid __main__ issues")
 
     def decorator(func):
         task_name = name or f"{func.__module__}.{func.__name__}"
 
+        # Store task metadata
         TASK_REGISTRY[task_name] = {
             "func": func,
             "retry_delay": retry_delay,
             "retry_for": retry_for,
+            "timeout": timeout,
+            "rate_limit": rate_limit,
         }
 
         @wraps(func)
@@ -42,7 +52,7 @@ def task(name=None, retries=0, retry_delay=0, retry_for=(Exception,)):
                 "attempt": 0,
                 "max_retries": retries,
                 "run_at": run_at.isoformat(),
-                "priority": priority,   
+                "priority": priority,
                 "locked_by": None,
                 "locked_at": None,
                 "last_error": None,
