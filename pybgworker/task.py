@@ -42,7 +42,7 @@ def task(name=None, retries=0, retry_delay=0, retry_for=(Exception,)):
                 "attempt": 0,
                 "max_retries": retries,
                 "run_at": run_at.isoformat(),
-                "priority": priority,   # ⭐ NEW
+                "priority": priority,   
                 "locked_by": None,
                 "locked_at": None,
                 "last_error": None,

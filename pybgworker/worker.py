@@ -2,7 +2,6 @@ import time
 import traceback
 import threading
 from multiprocessing import Process, Queue as MPQueue
-
 from .logger import log
 from .sqlite_queue import SQLiteQueue
 from .task import TASK_REGISTRY
