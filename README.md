@@ -1,32 +1,37 @@
 # PyBgWorker
 
-A lightweight, production-ready background task framework for Python.
+A lightweight, production-ready background task library for Python.
 
-PyBgWorker provides a durable SQLite-backed task queue, cron scheduling,
-rate limiting, retries, and structured observability — all without external
-infrastructure.
+PyBgWorker provides a durable SQLite-backed task queue, scheduling (cron and
+countdown/ETA), rate limiting, retries, and structured observability without
+external infrastructure.
 
 It is designed to be simple, reliable, and easy to deploy.
 
 ---
 
-## ✨ Features
+## Features
 
 - Persistent SQLite task queue
 - Multi-worker safe execution
+- Task scheduling: cron + countdown/ETA
 - Retry + failure handling
+- Task cancellation support
 - Crash isolation via subprocess
-- Cron scheduler for recurring jobs
+- Task priority execution
+- Task status tracking
+- Result storage and retrieval
+- Worker statistics and monitoring
 - JSON structured logging
 - Task duration tracking
 - Rate limiting (overload protection)
 - Heartbeat monitoring
-- CLI inspect / retry / purge / cancel
+- CLI tools: inspect, retry, failed, purge, cancel, stats
 - Production-safe worker loop
 
 ---
 
-## 🚀 Installation
+## Installation
 
 ```bash
 pip install pybgworker
@@ -34,7 +39,7 @@ pip install pybgworker
 
 ---
 
-## 🧠 Basic Usage
+## Basic Usage
 
 ### Define a task
 
@@ -54,7 +59,7 @@ add.delay(1, 2)
 
 ---
 
-## ▶ Run worker
+## Run worker
 
 ```bash
 python -m pybgworker.cli run --app example
@@ -62,7 +67,7 @@ python -m pybgworker.cli run --app example
 
 ---
 
-## ⏰ Cron Scheduler
+## Cron Scheduler
 
 Run recurring tasks:
 
@@ -80,7 +85,7 @@ Cron runs automatically inside the worker.
 
 ---
 
-## 📊 JSON Logging
+## JSON Logging
 
 All worker events are structured JSON:
 
@@ -98,7 +103,7 @@ This enables:
 
 ---
 
-## 🚦 Rate Limiting
+## Rate Limiting
 
 Protect infrastructure from overload:
 
@@ -110,7 +115,7 @@ Ensures predictable execution under heavy load.
 
 ---
 
-## 🔍 CLI Commands
+## CLI Commands
 
 Inspect queue:
 
@@ -138,7 +143,7 @@ python -m pybgworker.cli purge
 
 ---
 
-## 🧪 Observability
+## Observability
 
 PyBgWorker logs:
 
@@ -156,7 +161,7 @@ All machine-readable.
 
 ---
 
-## 🎯 Design Goals
+## Design Goals
 
 - zero external dependencies
 - SQLite durability
@@ -167,18 +172,23 @@ All machine-readable.
 
 ---
 
-## 📌 Roadmap
+## Roadmap
 
-Future upgrades may include:
+Planned but not yet included:
 
-- dashboard web UI
-- metrics endpoint
-- Redis backend
-- workflow pipelines
-- cluster coordination
+- Single-worker concurrency (process pool)
+- Retry backoff + jitter policies
+- Dead-letter queue for exhausted retries
+- Task/result TTL and automatic DB cleanup
+- Multiple named queues + routing
+- Pluggable backends (Redis first)
+- Cluster coordination / leader election for scheduler
+- Metrics endpoint and health checks
+- Dashboard API + web UI
+- Workflow pipelines / DAGs
 
 ---
 
-## 📄 License
+## License
 
 MIT License
