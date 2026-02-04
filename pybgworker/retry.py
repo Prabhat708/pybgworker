@@ -1,4 +1,5 @@
 from .utils import get_conn, now
+from .logger import log
 
 
 def retry(task_id):
@@ -9,11 +10,11 @@ def retry(task_id):
         ).fetchone()
 
         if not row:
-            print("❌ Task not found")
+            log("task_not_found", task_id=task_id)
             return
 
         if row[0] != "failed":
-            print("⚠ Task is not failed")
+            log("task_not_failed", task_id=task_id)
             return
 
         conn.execute("""
@@ -27,4 +28,4 @@ def retry(task_id):
 
         conn.commit()
 
-    print("🔁 Task requeued")
+    log("task_requeued", task_id=task_id)

@@ -1,4 +1,5 @@
 from .utils import get_conn
+from .logger import log
 
 
 def purge():
@@ -11,4 +12,4 @@ def purge():
         deleted = cursor.rowcount
         conn.commit()
 
-    print(f"🧹 Purged {deleted} queued tasks")
+    log("purged_tasks", count=deleted)

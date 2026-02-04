@@ -1,4 +1,5 @@
 from .utils import get_conn, now
+from .logger import log
 
 
 def cancel(task_id):
@@ -9,11 +10,11 @@ def cancel(task_id):
         ).fetchone()
 
         if not row:
-            print("❌ Task not found")
+            log("task_not_found", task_id=task_id)
             return
 
         if row[0] != "running":
-            print("⚠ Task is not running")
+            log("task_not_running", task_id=task_id)
             return
 
         conn.execute("""
@@ -26,4 +27,4 @@ def cancel(task_id):
 
         conn.commit()
 
-    print("🛑 Task cancelled")
+    log("task_cancelled", task_id=task_id)
