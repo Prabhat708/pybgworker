@@ -8,7 +8,7 @@ from multiprocessing import Process, Queue as MPQueue
 from .logger import log
 from .sqlite_queue import SQLiteQueue
 from .task import TASK_REGISTRY
-from .config import WORKER_NAME, POLL_INTERVAL, RATE_LIMIT
+from .config import WORKER_NAME, POLL_INTERVAL, RATE_LIMIT, get_worker_concurrency
 from .utils import loads, get_conn, now
 from .backends import SQLiteBackend
 from .scheduler import run_scheduler
@@ -24,13 +24,12 @@ TASK_TIMEOUT = 150  # default timeout
 
 shutdown_requested = False
 last_shutdown_signal = 0
-current_task_id = None
-current_process = None
+active_tasks = {}
+active_tasks_lock = threading.Lock()
 
 
 def handle_shutdown(signum, frame):
     global shutdown_requested, last_shutdown_signal
-    global current_task_id, current_process
 
     now_ts = time.time()
 
@@ -44,12 +43,17 @@ def handle_shutdown(signum, frame):
     if shutdown_requested:
         log("worker_force_exit", worker=WORKER_NAME)
 
-        if current_task_id:
-            queue.cancel(current_task_id)
-            log("task_cancelled", task_id=current_task_id)
+        with active_tasks_lock:
+            task_ids = list(active_tasks.keys())
+            processes = [info["process"] for info in active_tasks.values()]
 
-        if current_process and current_process.is_alive():
-            current_process.terminate()
+        for task_id in task_ids:
+            queue.cancel(task_id)
+            log("task_cancelled", task_id=task_id)
+
+        for process in processes:
+            if process.is_alive():
+                process.terminate()
 
         os._exit(1)
 
@@ -85,105 +89,143 @@ def run_task(func, args, kwargs, result_queue):
         result_queue.put(("error", traceback.format_exc()))
 
 
+def start_task(task):
+    meta = TASK_REGISTRY.get(task["name"])
+    if not meta:
+        queue.fail(task["id"], "Task not registered")
+        log("task_invalid", task_id=task["id"])
+        return None
+
+    limiter.acquire(meta.get("rate_limit"))
+
+    func = meta["func"]
+    retry_delay = meta["retry_delay"]
+
+    args = loads(task["args"])
+    kwargs = loads(task["kwargs"])
+
+    task_id = task["id"]
+    log("task_start", task_id=task_id, worker=WORKER_NAME)
+
+    result_queue = MPQueue()
+    process = Process(target=run_task, args=(func, args, kwargs, result_queue))
+
+    process.start()
+
+    timeout = meta.get("timeout") or TASK_TIMEOUT
+
+    return {
+        "task": task,
+        "process": process,
+        "result_queue": result_queue,
+        "start_time": now(),
+        "start_monotonic": time.monotonic(),
+        "timeout": timeout,
+        "retry_delay": retry_delay,
+    }
+
+
+def handle_timeout(task_id, info):
+    info["process"].terminate()
+
+    backend_info = backend.get_task(task_id)
+    if backend_info["status"] == "cancelled":
+        log("task_cancelled", task_id=task_id)
+        return
+
+    queue.fail(task_id, "Task timeout")
+    log("task_timeout", task_id=task_id)
+    log("task_failed", task_id=task_id)
+
+
+def handle_completed(task_id, info):
+    result_queue = info["result_queue"]
+
+    if result_queue.empty():
+        queue.fail(task_id, "Task crashed")
+        log("task_crash", task_id=task_id)
+        return
+
+    status, payload = result_queue.get()
+    duration = (now() - info["start_time"]).total_seconds()
+
+    if status == "success":
+        backend.store_result(task_id, payload)
+        queue.ack(task_id)
+        log(
+            "task_success",
+            task_id=task_id,
+            duration=duration,
+            worker=WORKER_NAME,
+        )
+        return
+
+    task = info["task"]
+    if task["attempt"] < task["max_retries"]:
+        queue.reschedule(task_id, info["retry_delay"])
+    else:
+        queue.fail(task_id, payload)
+
+
 def run_worker():
-    global shutdown_requested, current_task_id, current_process
+    global shutdown_requested
 
     signal.signal(signal.SIGINT, handle_shutdown)
     signal.signal(signal.SIGTERM, handle_shutdown)
 
-    log("worker_start", worker=WORKER_NAME)
+    concurrency = max(1, get_worker_concurrency())
+    log("worker_start", worker=WORKER_NAME, concurrency=concurrency)
 
     threading.Thread(target=heartbeat, daemon=True).start()
     threading.Thread(target=run_scheduler, daemon=True).start()
 
-    while not shutdown_requested:
-        task = queue.fetch_next(WORKER_NAME)
+    while True:
+        if not shutdown_requested:
+            while not shutdown_requested:
+                with active_tasks_lock:
+                    slots_available = len(active_tasks) < concurrency
 
-        if not task:
+                if not slots_available:
+                    break
+
+                task = queue.fetch_next(WORKER_NAME)
+                if not task:
+                    break
+
+                info = start_task(task)
+                if not info:
+                    continue
+
+                with active_tasks_lock:
+                    active_tasks[task["id"]] = info
+
+        with active_tasks_lock:
+            active_snapshot = list(active_tasks.items())
+
+        if not active_snapshot:
             if shutdown_requested:
                 break
             time.sleep(POLL_INTERVAL)
             continue
 
-        meta = TASK_REGISTRY.get(task["name"])
-        if not meta:
-            queue.fail(task["id"], "Task not registered")
-            log("task_invalid", task_id=task["id"])
-            continue
+        finished_any = False
+        for task_id, info in active_snapshot:
+            process = info["process"]
 
-        # -------- Rate limit per task --------
-        limiter.acquire(meta.get("rate_limit"))
-
-        func = meta["func"]
-        retry_delay = meta["retry_delay"]
-
-        args = loads(task["args"])
-        kwargs = loads(task["kwargs"])
-
-        start_time = now()
-        current_task_id = task["id"]
-
-        log("task_start", task_id=current_task_id, worker=WORKER_NAME)
-
-        result_queue = MPQueue()
-        process = Process(target=run_task, args=(func, args, kwargs, result_queue))
-        current_process = process
-
-        process.start()
-
-        # -------- Timeout per task --------
-        timeout = meta.get("timeout") or TASK_TIMEOUT
-
-        start_join = time.time()
-
-        while process.is_alive():
-            if time.time() - start_join > timeout:
-                break
-            time.sleep(0.2)
-
-        if process.is_alive():
-            process.terminate()
-
-            info = backend.get_task(current_task_id)
-            if info["status"] == "cancelled":
-                log("task_cancelled", task_id=current_task_id)
-                current_task_id = None
-                current_process = None
+            if process.is_alive():
+                if time.monotonic() - info["start_monotonic"] > info["timeout"]:
+                    handle_timeout(task_id, info)
+                    finished_any = True
+                    with active_tasks_lock:
+                        active_tasks.pop(task_id, None)
                 continue
 
-            queue.fail(current_task_id, "Task timeout")
-            log("task_timeout", task_id=current_task_id)
-            log("task_failed", task_id=current_task_id)
-            current_task_id = None
-            current_process = None
-            continue
+            handle_completed(task_id, info)
+            finished_any = True
+            with active_tasks_lock:
+                active_tasks.pop(task_id, None)
 
-        if result_queue.empty():
-            queue.fail(current_task_id, "Task crashed")
-            log("task_crash", task_id=current_task_id)
-            current_task_id = None
-            current_process = None
-            continue
-
-        status, payload = result_queue.get()
-        duration = (now() - start_time).total_seconds()
-
-        if status == "success":
-            backend.store_result(current_task_id, payload)
-            queue.ack(current_task_id)
-            log(
-                "task_success",
-                task_id=current_task_id,
-                duration=duration,
-                worker=WORKER_NAME,
-            )
-        else:
-            if task["attempt"] < task["max_retries"]:
-                queue.reschedule(current_task_id, retry_delay)
-            else:
-                queue.fail(current_task_id, payload)
-
-        current_task_id = None
-        current_process = None
+        if not finished_any:
+            time.sleep(0.1)
 
     log("worker_stopped", worker=WORKER_NAME)

@@ -106,6 +106,10 @@ Alternative:
 
 python -m pybgworker.cli run --app tasks
 
+To run multiple tasks in parallel within one worker:
+
+python -m pybgworker.cli run --app tasks --concurrency 4
+
 ### Step 3 — Enqueue task
 
 from tasks import addresult = add.delay(5, 7)print("Task ID:", result.id)
@@ -370,11 +374,11 @@ Apply rate limits for APIs
 
 Current model:
 
-One process per task
+One subprocess per task
+
+Configurable per-worker concurrency via PYBGWORKER_CONCURRENCY (default 1)
 
 Safe and predictable execution
-
-Future versions may include process pools for higher throughput.
 
 ## 22. Minimal Project Structure
 

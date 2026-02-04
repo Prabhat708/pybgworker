@@ -26,6 +26,7 @@ It is designed to be simple, reliable, and easy to deploy.
 - Task duration tracking
 - Rate limiting (overload protection)
 - Heartbeat monitoring
+- Configurable single-worker concurrency
 - CLI tools: inspect, retry, failed, purge, cancel, stats
 - Production-safe worker loop
 
@@ -64,6 +65,24 @@ add.delay(1, 2)
 ```bash
 python -m pybgworker.cli run --app example
 ```
+
+---
+
+## Worker Concurrency
+
+Run multiple tasks in parallel within a single worker process:
+
+```bash
+PYBGWORKER_CONCURRENCY=4 python -m pybgworker.cli run --app example
+```
+
+Or with a CLI flag:
+
+```bash
+python -m pybgworker.cli run --app example --concurrency 4
+```
+
+Defaults to `1` for backward-compatible behavior.
 
 ---
 
@@ -176,7 +195,6 @@ All machine-readable.
 
 Planned but not yet included:
 
-- Single-worker concurrency (process pool)
 - Retry backoff + jitter policies
 - Dead-letter queue for exhausted retries
 - Task/result TTL and automatic DB cleanup

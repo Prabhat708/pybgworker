@@ -31,12 +31,20 @@ def main():
         "--app",
         help="module containing task definitions (required for run)"
     )
+    parser.add_argument(
+        "--concurrency",
+        type=int,
+        help="number of tasks to run in parallel per worker"
+    )
 
     args = parser.parse_args()
 
     if args.command == "run":
         if not args.app:
             parser.error("--app is required for 'run'")
+
+        if args.concurrency is not None:
+            os.environ["PYBGWORKER_CONCURRENCY"] = str(args.concurrency)
 
         sys.path.insert(0, os.getcwd())
         importlib.import_module(args.app)
