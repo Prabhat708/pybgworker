@@ -12,7 +12,7 @@ backend = SQLiteBackend()
 
 def task(
     name=None,
-    retries=0,
+    retries=3,
     retry_delay=0,
     retry_for=(Exception,),
     timeout=None,
