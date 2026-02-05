@@ -237,6 +237,13 @@ Planned but not yet included:
 
 ---
 
+## Feedback and Issues
+
+For feedback, enhancement requests, or error reports, please use this form:
+`https://forms.gle/bUFRximzAGN6bCBQA`
+
+---
+
 ## License
 
 MIT License
