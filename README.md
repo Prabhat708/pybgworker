@@ -240,7 +240,13 @@ Planned but not yet included:
 ## Feedback and Issues
 
 For feedback, enhancement requests, or error reports, please use this form:
-`https://forms.gle/bUFRximzAGN6bCBQA`
+
+[Submit feedback / report an issue](https://forms.gle/bUFRximzAGN6bCBQA)
+
+Copy/paste link:
+```text
+https://forms.gle/bUFRximzAGN6bCBQA
+```
 
 ---
 
