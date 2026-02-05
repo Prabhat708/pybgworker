@@ -180,6 +180,36 @@ All machine-readable.
 
 ---
 
+## Database Cleanup
+
+Enable automatic retention cleanup for completed tasks:
+
+```bash
+python -m pybgworker.cli run --app example --retention-days 30
+```
+
+Environment variable alternative:
+
+```bash
+PYBGWORKER_RETENTION_DAYS=30 python -m pybgworker.cli run --app example
+```
+
+Optional cleanup interval (hours, default 24):
+
+```bash
+python -m pybgworker.cli run --app example --cleanup-interval-hours 12
+```
+
+Optional cleanup interval (minutes):
+
+```bash
+python -m pybgworker.cli run --app example --cleanup-interval-minutes 6
+```
+
+When enabled, PyBgWorker prunes finished tasks older than the retention window and runs a `VACUUM` after deletions.
+
+---
+
 ## Design Goals
 
 - zero external dependencies

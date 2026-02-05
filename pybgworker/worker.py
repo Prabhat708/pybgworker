@@ -8,7 +8,15 @@ from multiprocessing import Process, Queue as MPQueue
 from .logger import log
 from .sqlite_queue import SQLiteQueue
 from .task import TASK_REGISTRY
-from .config import WORKER_NAME, POLL_INTERVAL, RATE_LIMIT, get_worker_concurrency
+from .config import (
+    WORKER_NAME,
+    POLL_INTERVAL,
+    RATE_LIMIT,
+    RETENTION_DAYS,
+    CLEANUP_INTERVAL_HOURS,
+    CLEANUP_INTERVAL_MINUTES,
+    get_worker_concurrency,
+)
 from .utils import loads, get_conn, now
 from .backends import SQLiteBackend
 from .scheduler import run_scheduler
@@ -76,6 +84,29 @@ def heartbeat():
             log("heartbeat_error", error=str(e))
 
         time.sleep(5)
+
+
+def maintenance_loop():
+    if CLEANUP_INTERVAL_MINUTES > 0:
+        interval_seconds = max(60, CLEANUP_INTERVAL_MINUTES * 60)
+    else:
+        interval_hours = max(1, CLEANUP_INTERVAL_HOURS)
+        interval_seconds = interval_hours * 3600
+
+    while True:
+        try:
+            result = queue.cleanup(RETENTION_DAYS, vacuum=True)
+            log(
+                "db_cleanup",
+                retention_days=RETENTION_DAYS,
+                deleted=result["deleted"],
+                vacuumed=result["vacuumed"],
+                locked=result["locked"],
+            )
+        except Exception as e:
+            log("db_cleanup_error", error=str(e))
+
+        time.sleep(interval_seconds)
 
 
 def run_task(func, args, kwargs, result_queue):
@@ -178,6 +209,8 @@ def run_worker():
 
     threading.Thread(target=heartbeat, daemon=True).start()
     threading.Thread(target=run_scheduler, daemon=True).start()
+    if RETENTION_DAYS > 0:
+        threading.Thread(target=maintenance_loop, daemon=True).start()
 
     while True:
         if not shutdown_requested:

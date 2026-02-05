@@ -380,6 +380,24 @@ Configurable per-worker concurrency via PYBGWORKER_CONCURRENCY (default 1)
 
 Safe and predictable execution
 
+## 21.1 Database Cleanup
+
+Enable automatic retention cleanup for completed tasks:
+
+python -m pybgworker.cli run --app tasks --retention-days 30
+
+Environment variable alternative:
+
+PYBGWORKER_RETENTION_DAYS=30 python -m pybgworker.cli run --app tasks
+
+Optional cleanup interval (hours, default 24):
+
+python -m pybgworker.cli run --app tasks --cleanup-interval-hours 12
+
+Optional cleanup interval (minutes):
+
+python -m pybgworker.cli run --app tasks --cleanup-interval-minutes 6
+
 ## 22. Minimal Project Structure
 
 project/│├── tasks.py├── main.py└── db.sqlite

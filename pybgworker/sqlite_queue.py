@@ -159,3 +159,39 @@ class SQLiteQueue(BaseQueue):
                 WHERE id=?
             """, (now().isoformat(), now().isoformat(), task_id))
             conn.commit()
+
+    # ---------------- maintenance ----------------
+
+    def cleanup(self, retention_days, vacuum=True):
+        if retention_days <= 0:
+            return {"deleted": 0, "vacuumed": False, "locked": False}
+
+        cutoff = (now() - timedelta(days=retention_days)).isoformat()
+        deleted = 0
+        locked = False
+
+        with get_conn() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+            except sqlite3.OperationalError:
+                locked = True
+            else:
+                cur = conn.execute("""
+                    DELETE FROM tasks
+                    WHERE finished_at IS NOT NULL
+                    AND finished_at < ?
+                """, (cutoff,))
+                deleted = cur.rowcount
+                conn.commit()
+
+        vacuumed = False
+        if vacuum and deleted > 0 and not locked:
+            with get_conn() as conn:
+                try:
+                    conn.execute("VACUUM")
+                    conn.commit()
+                    vacuumed = True
+                except sqlite3.OperationalError:
+                    vacuumed = False
+
+        return {"deleted": deleted, "vacuumed": vacuumed, "locked": locked}
