@@ -44,6 +44,8 @@ dependencies = [
 Homepage = "https://github.com/prabhat708/pybgworker"
 Repository = "https://github.com/prabhat708/pybgworker"
 Issues = "https://github.com/prabhat708/pybgworker/issues"
+Document ="https://github.com/Prabhat708/pybgworker/blob/main/UserGuide.md"
+
 
 [project.scripts]
 pybgworker = "pybgworker.cli:main"
