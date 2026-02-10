@@ -174,6 +174,20 @@ Worker must be running at execution time
 
 Retries occur automatically with delay between attempts.
 
+Backoff and jitter options:
+
+@task(name="tasks.api_call", retries=5, retry_delay=2, retry_backoff=True, retry_backoff_factor=2, retry_max_delay=60, retry_jitter=0.2)
+def api_call():
+    raise Exception("Temporary failure")
+
+Notes:
+
+- retry_backoff enables exponential backoff
+- retry_backoff_factor is the multiplier per attempt (default 2)
+- retry_max_delay caps the delay in seconds
+- retry_jitter randomizes delay (ratio <=1 or seconds if >1)
+
+
 ## 9. Task Timeout
 
 @task(name="tasks.heavy", timeout=30)def heavy():    ...
@@ -221,6 +235,13 @@ failed
 cancelled
 
 ## 13. Queue & Job Management Commands
+### Failed vs Dead
+
+- failed: task failed but may still be retried
+- dead: task exhausted all retries and is terminal for inspection
+
+Use `pybgworker failed` to see failed + dead, or `pybgworker dead` for dead-only.
+
 
 ### Cancel Task
 
@@ -393,10 +414,6 @@ PYBGWORKER_RETENTION_DAYS=30 python -m pybgworker.cli run --app tasks
 Optional cleanup interval (hours, default 24):
 
 python -m pybgworker.cli run --app tasks --cleanup-interval-hours 12
-
-Optional cleanup interval (minutes):
-
-python -m pybgworker.cli run --app tasks --cleanup-interval-minutes 6
 
 ## 22. Minimal Project Structure
 

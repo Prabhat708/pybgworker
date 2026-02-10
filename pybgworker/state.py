@@ -6,6 +6,7 @@ class TaskState(str, Enum):
     RUNNING = "running"
     RETRYING = "retrying"
     FAILED = "failed"
+    DEAD = "dead"
     SUCCESS = "success"
     CANCELLED = "cancelled"
 
@@ -16,6 +17,7 @@ ALLOWED_TRANSITIONS = {
         TaskState.SUCCESS,
         TaskState.RETRYING,
         TaskState.FAILED,
+        TaskState.DEAD,
         TaskState.CANCELLED,
     },
     TaskState.RETRYING: {TaskState.RUNNING},

@@ -128,6 +128,22 @@ class SQLiteQueue(BaseQueue):
             """, (error, now().isoformat(), now().isoformat(), task_id))
             conn.commit()
 
+    # ---------------- dead ----------------
+
+    def dead(self, task_id, error):
+        with get_conn() as conn:
+            conn.execute("""
+                UPDATE tasks
+                SET status='dead',
+                    last_error=?,
+                    finished_at=?,
+                    updated_at=?,
+                    locked_by=NULL,
+                    locked_at=NULL
+                WHERE id=?
+            """, (error, now().isoformat(), now().isoformat(), task_id))
+            conn.commit()
+
     # ---------------- retry ----------------
 
     def reschedule(self, task_id, delay):
@@ -162,13 +178,26 @@ class SQLiteQueue(BaseQueue):
 
     # ---------------- maintenance ----------------
 
-    def cleanup(self, retention_days, vacuum=True):
+    def cleanup(
+        self,
+        retention_days,
+        vacuum=True,
+    ):
         if retention_days <= 0:
-            return {"deleted": 0, "vacuumed": False, "locked": False}
+            return {
+                "deleted": 0,
+                "deleted_finished": 0,
+                "vacuumed": False,
+                "locked": False,
+            }
 
-        cutoff = (now() - timedelta(days=retention_days)).isoformat()
-        deleted = 0
+        deleted_finished = 0
         locked = False
+
+        retention_cutoff = None
+
+        if retention_days > 0:
+            retention_cutoff = (now() - timedelta(days=retention_days)).isoformat()
 
         with get_conn() as conn:
             try:
@@ -176,13 +205,17 @@ class SQLiteQueue(BaseQueue):
             except sqlite3.OperationalError:
                 locked = True
             else:
-                cur = conn.execute("""
-                    DELETE FROM tasks
-                    WHERE finished_at IS NOT NULL
-                    AND finished_at < ?
-                """, (cutoff,))
-                deleted = cur.rowcount
+                if retention_cutoff:
+                    cur = conn.execute("""
+                        DELETE FROM tasks
+                        WHERE finished_at IS NOT NULL
+                        AND finished_at < ?
+                    """, (retention_cutoff,))
+                    deleted_finished = cur.rowcount
+
                 conn.commit()
+
+        deleted = deleted_finished
 
         vacuumed = False
         if vacuum and deleted > 0 and not locked:
@@ -194,4 +227,9 @@ class SQLiteQueue(BaseQueue):
                 except sqlite3.OperationalError:
                     vacuumed = False
 
-        return {"deleted": deleted, "vacuumed": vacuumed, "locked": locked}
+        return {
+            "deleted": deleted,
+            "deleted_finished": deleted_finished,
+            "vacuumed": vacuumed,
+            "locked": locked,
+        }

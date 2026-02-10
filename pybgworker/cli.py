@@ -9,7 +9,7 @@ def main():
 
     parser.add_argument(
         "command",
-        choices=["run", "inspect", "retry", "purge", "cancel", "failed", "stats"],
+        choices=["run", "inspect", "retry", "purge", "cancel", "failed", "dead", "stats"],
         help="worker control commands"
     )
 
@@ -38,11 +38,6 @@ def main():
         type=int,
         help="hours between automatic cleanup runs"
     )
-    parser.add_argument(
-        "--cleanup-interval-minutes",
-        type=int,
-        help="minutes between automatic cleanup runs"
-    )
 
     args = parser.parse_args()
 
@@ -55,10 +50,6 @@ def main():
     if args.cleanup_interval_hours is not None:
         os.environ["PYBGWORKER_CLEANUP_INTERVAL_HOURS"] = str(
             args.cleanup_interval_hours
-        )
-    if args.cleanup_interval_minutes is not None:
-        os.environ["PYBGWORKER_CLEANUP_INTERVAL_MINUTES"] = str(
-            args.cleanup_interval_minutes
         )
 
     if args.command == "run":
@@ -93,6 +84,10 @@ def main():
     elif args.command == "failed":
         from .failed import list_failed
         list_failed()
+
+    elif args.command == "dead":
+        from .dead import list_dead
+        list_dead()
 
     elif args.command == "stats":
         from .stats import stats

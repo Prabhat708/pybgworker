@@ -1,20 +1,20 @@
 from .utils import get_conn
 
 
-def list_failed():
+def list_dead():
     with get_conn() as conn:
         rows = conn.execute("""
             SELECT id, name, attempt, last_error
             FROM tasks
-            WHERE status IN ('failed','dead')
+            WHERE status='dead'
             ORDER BY updated_at DESC
         """).fetchall()
 
     if not rows:
-        print("✅ No failed tasks")
+        print("No dead tasks")
         return
 
-    print("\n❌ Failed/Dead Tasks\n")
+    print("\nDead Tasks\n")
 
     for r in rows:
         print(f"ID: {r[0]}")

@@ -134,6 +134,34 @@ Ensures predictable execution under heavy load.
 
 ---
 
+## Retry Backoff + Jitter
+
+Enable exponential backoff and jitter to spread retry load:
+
+```python
+from pybgworker.task import task
+
+@task(
+    name="api_call",
+    retries=5,
+    retry_delay=2,
+    retry_backoff=True,
+    retry_backoff_factor=2,
+    retry_max_delay=60,
+    retry_jitter=0.2,
+)
+def api_call():
+    ...
+```
+
+- `retry_backoff`: enable exponential backoff
+- `retry_backoff_factor`: multiplier per attempt (default `2`)
+- `retry_max_delay`: cap delay in seconds
+- `retry_jitter`: randomize delay (ratio `<=1` or seconds if `>1`)
+
+
+---
+
 ## CLI Commands
 
 Inspect queue:
@@ -200,13 +228,16 @@ Optional cleanup interval (hours, default 24):
 python -m pybgworker.cli run --app example --cleanup-interval-hours 12
 ```
 
-Optional cleanup interval (minutes):
-
-```bash
-python -m pybgworker.cli run --app example --cleanup-interval-minutes 6
-```
-
 When enabled, PyBgWorker prunes finished tasks older than the retention window and runs a `VACUUM` after deletions.
+
+---
+
+## Failed vs Dead
+
+- `failed`: a task failed but may still be retried (or was manually marked failed).
+- `dead`: a task exhausted all retries and was moved to a terminal state for inspection.
+
+Use `pybgworker failed` to see both failed + dead, or `pybgworker dead` for dead-only.
 
 ---
 

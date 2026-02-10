@@ -13,7 +13,7 @@ def retry(task_id):
             log("task_not_found", task_id=task_id)
             return
 
-        if row[0] != "failed":
+        if row[0] not in ("failed", "dead"):
             log("task_not_failed", task_id=task_id)
             return
 

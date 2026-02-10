@@ -3,6 +3,7 @@ import traceback
 import threading
 import signal
 import os
+import random
 from multiprocessing import Process, Queue as MPQueue
 
 from .logger import log
@@ -14,7 +15,6 @@ from .config import (
     RATE_LIMIT,
     RETENTION_DAYS,
     CLEANUP_INTERVAL_HOURS,
-    CLEANUP_INTERVAL_MINUTES,
     get_worker_concurrency,
 )
 from .utils import loads, get_conn, now
@@ -87,19 +87,20 @@ def heartbeat():
 
 
 def maintenance_loop():
-    if CLEANUP_INTERVAL_MINUTES > 0:
-        interval_seconds = max(60, CLEANUP_INTERVAL_MINUTES * 60)
-    else:
-        interval_hours = max(1, CLEANUP_INTERVAL_HOURS)
-        interval_seconds = interval_hours * 3600
+    interval_hours = max(1, CLEANUP_INTERVAL_HOURS)
+    interval_seconds = interval_hours * 3600
 
     while True:
         try:
-            result = queue.cleanup(RETENTION_DAYS, vacuum=True)
+            result = queue.cleanup(
+                retention_days=RETENTION_DAYS,
+                vacuum=True,
+            )
             log(
                 "db_cleanup",
                 retention_days=RETENTION_DAYS,
                 deleted=result["deleted"],
+                deleted_finished=result.get("deleted_finished", 0),
                 vacuumed=result["vacuumed"],
                 locked=result["locked"],
             )
@@ -120,6 +121,36 @@ def run_task(func, args, kwargs, result_queue):
         result_queue.put(("error", traceback.format_exc()))
 
 
+def compute_retry_delay(task, meta):
+    base_delay = meta.get("retry_delay") or 0
+    if base_delay < 0:
+        base_delay = 0
+
+    delay = base_delay
+    if meta.get("retry_backoff"):
+        factor = meta.get("retry_backoff_factor") or 2
+        if factor < 1:
+            factor = 1
+        delay = base_delay * (factor ** task["attempt"])
+
+    max_delay = meta.get("retry_max_delay")
+    if max_delay is not None:
+        delay = min(delay, max_delay)
+
+    jitter = meta.get("retry_jitter") or 0.0
+    if jitter < 0:
+        jitter = 0.0
+
+    if jitter:
+        if jitter <= 1:
+            jitter_amount = delay * jitter
+        else:
+            jitter_amount = jitter
+        delay = max(0.0, delay + random.uniform(-jitter_amount, jitter_amount))
+
+    return delay
+
+
 def start_task(task):
     meta = TASK_REGISTRY.get(task["name"])
     if not meta:
@@ -130,8 +161,6 @@ def start_task(task):
     limiter.acquire(meta.get("rate_limit"))
 
     func = meta["func"]
-    retry_delay = meta["retry_delay"]
-
     args = loads(task["args"])
     kwargs = loads(task["kwargs"])
 
@@ -152,7 +181,13 @@ def start_task(task):
         "start_time": now(),
         "start_monotonic": time.monotonic(),
         "timeout": timeout,
-        "retry_delay": retry_delay,
+        "retry_meta": {
+            "retry_delay": meta.get("retry_delay"),
+            "retry_backoff": meta.get("retry_backoff"),
+            "retry_backoff_factor": meta.get("retry_backoff_factor"),
+            "retry_max_delay": meta.get("retry_max_delay"),
+            "retry_jitter": meta.get("retry_jitter"),
+        },
     }
 
 
@@ -164,9 +199,16 @@ def handle_timeout(task_id, info):
         log("task_cancelled", task_id=task_id)
         return
 
-    queue.fail(task_id, "Task timeout")
-    log("task_timeout", task_id=task_id)
-    log("task_failed", task_id=task_id)
+    task = info["task"]
+    if task["attempt"] < task["max_retries"]:
+        delay = compute_retry_delay(task, info["retry_meta"])
+        queue.reschedule(task_id, delay)
+        log("task_timeout", task_id=task_id)
+        log("task_retry_scheduled", task_id=task_id, delay=delay)
+    else:
+        queue.dead(task_id, "Task timeout")
+        log("task_timeout", task_id=task_id)
+        log("task_dead", task_id=task_id)
 
 
 def handle_completed(task_id, info):
@@ -193,9 +235,10 @@ def handle_completed(task_id, info):
 
     task = info["task"]
     if task["attempt"] < task["max_retries"]:
-        queue.reschedule(task_id, info["retry_delay"])
+        delay = compute_retry_delay(task, info["retry_meta"])
+        queue.reschedule(task_id, delay)
     else:
-        queue.fail(task_id, payload)
+        queue.dead(task_id, payload)
 
 
 def run_worker():
