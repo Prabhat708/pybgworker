@@ -256,9 +256,7 @@ Use `pybgworker failed` to see both failed + dead, or `pybgworker dead` for dead
 
 Planned but not yet included:
 
-- Retry backoff + jitter policies
-- Dead-letter queue for exhausted retries
-- Task/result TTL and automatic DB cleanup
+- Task/result TTL cleanup (beyond retention of finished tasks)
 - Multiple named queues + routing
 - Pluggable backends (Redis first)
 - Cluster coordination / leader election for scheduler

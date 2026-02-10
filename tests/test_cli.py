@@ -1,12 +1,13 @@
 import os
 
 import pybgworker.cli as cli
+import pybgworker.worker as worker
 
 
 def test_cli_concurrency_overrides_env(monkeypatch):
     monkeypatch.setenv("PYBGWORKER_CONCURRENCY", "1")
 
-    monkeypatch.setattr(cli, "run_worker", lambda: None)
+    monkeypatch.setattr(worker, "run_worker", lambda: None)
     monkeypatch.setattr(cli.importlib, "import_module", lambda *_args, **_kwargs: None)
 
     monkeypatch.setattr(

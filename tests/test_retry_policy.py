@@ -1,4 +1,6 @@
 import os
+import gc
+import time
 from datetime import timedelta
 
 import pytest
@@ -11,6 +13,17 @@ from pybgworker.sqlite_queue import SQLiteQueue
 
 TEST_DB = "test_pybgworker_policy.db"
 
+def _safe_remove(path, retries=5, delay=0.05):
+    for _ in range(retries):
+        try:
+            os.remove(path)
+            return
+        except PermissionError:
+            # give SQLite time to release file handles on Windows
+            gc.collect()
+            time.sleep(delay)
+    os.remove(path)
+
 
 @pytest.fixture(autouse=True)
 def setup_db(monkeypatch):
@@ -19,12 +32,12 @@ def setup_db(monkeypatch):
     utils.DB_PATH = TEST_DB
 
     if os.path.exists(TEST_DB):
-        os.remove(TEST_DB)
+        _safe_remove(TEST_DB)
 
     yield
 
     if os.path.exists(TEST_DB):
-        os.remove(TEST_DB)
+        _safe_remove(TEST_DB)
 
 
 def test_compute_retry_delay_backoff_and_jitter(monkeypatch):
@@ -87,58 +100,38 @@ def _insert_task(conn, task_id, status, created_at, finished_at=None, result=Non
     )
 
 
-def test_cleanup_task_ttl_deletes_queued_tasks():
+def test_cleanup_retention_deletes_finished_tasks():
     queue = SQLiteQueue()
 
-    old_time = (utils.now() - timedelta(seconds=120)).isoformat()
-    new_time = (utils.now() - timedelta(seconds=10)).isoformat()
+    old_finished = (utils.now() - timedelta(days=2)).isoformat()
+    new_finished = (utils.now() - timedelta(hours=2)).isoformat()
 
     with utils.get_conn() as conn:
-        _insert_task(conn, "old", "queued", old_time)
-        _insert_task(conn, "new", "queued", new_time)
+        _insert_task(
+            conn,
+            "old",
+            "success",
+            old_finished,
+            finished_at=old_finished,
+            result='{"ok": true}',
+        )
+        _insert_task(
+            conn,
+            "new",
+            "success",
+            new_finished,
+            finished_at=new_finished,
+            result='{"ok": true}',
+        )
         conn.commit()
 
     result = queue.cleanup(
-        retention_days=0,
-        task_ttl_seconds=60,
-        result_ttl_seconds=0,
+        retention_days=1,
         vacuum=False,
     )
 
     with utils.get_conn() as conn:
         remaining = conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
 
-    assert result["deleted_expired"] == 1
+    assert result["deleted_finished"] == 1
     assert remaining == 1
-
-
-def test_cleanup_result_ttl_clears_results_only():
-    queue = SQLiteQueue()
-
-    old_finished = (utils.now() - timedelta(seconds=120)).isoformat()
-
-    with utils.get_conn() as conn:
-        _insert_task(
-            conn,
-            "finished",
-            "success",
-            old_finished,
-            finished_at=old_finished,
-            result='{"ok": true}',
-        )
-        conn.commit()
-
-    result = queue.cleanup(
-        retention_days=0,
-        task_ttl_seconds=0,
-        result_ttl_seconds=60,
-        vacuum=False,
-    )
-
-    with utils.get_conn() as conn:
-        row = conn.execute(
-            "SELECT result FROM tasks WHERE id='finished'"
-        ).fetchone()
-
-    assert result["cleared_results"] == 1
-    assert row[0] is None

@@ -5,6 +5,7 @@ import pytest
 
 from pybgworker import task, AsyncResult
 from pybgworker.sqlite_queue import SQLiteQueue
+from pybgworker.backends import SQLiteBackend
 from pybgworker.worker import run_worker
 from pybgworker.config import DB_PATH
 
@@ -34,7 +35,7 @@ def setup_test_db(monkeypatch):
 
 attempt = {"count": 0}
 
-@task(retries=3, retry_delay=1)
+@task(name="tests.flaky_task", retries=3, retry_delay=1)
 def flaky_task():
     """
     Fails 3 times, succeeds on 4th attempt
@@ -61,6 +62,7 @@ def test_task_retries_and_succeeds():
 
     # Run worker loop manually (limited iterations)
     queue = SQLiteQueue()
+    backend = SQLiteBackend()
 
     for _ in range(6):
         task_row = queue.fetch_next("test-worker")
@@ -68,7 +70,8 @@ def test_task_retries_and_succeeds():
         if task_row:
             try:
                 flaky_task()
-                queue.ack(task_row["id"], "SUCCESS")
+                backend.store_result(task_row["id"], "SUCCESS")
+                queue.ack(task_row["id"])
             except Exception:
                 if task_row["attempt"] < task_row["max_retries"]:
                     queue.reschedule(task_row["id"], 0)

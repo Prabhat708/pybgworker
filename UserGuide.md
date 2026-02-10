@@ -44,7 +44,7 @@ Batch processing
 
 Background web backend jobs
 
-Dashboard task tracking
+Task status tracking via CLI and logs
 
 All with zero external dependencies.
 

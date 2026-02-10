@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.3.0] - 2026-02-10
+
+### Removed
+- Cleanup interval minutes, task TTL, and result TTL options (CLI/env) and related cleanup behavior
+
+### Updated
+- Cleanup logic now uses retention-only policy for finished tasks
+- README and UserGuide aligned with current capabilities and roadmap
+- Tests updated to match current APIs and behavior; Windows-friendly DB cleanup in tests
+
+---
+
 ## [0.2.2] - 2026-02-03
 
 ### Added
