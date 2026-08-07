@@ -26,6 +26,11 @@ class SQLiteQueue(BaseQueue):
                 max_retries INTEGER,
                 run_at TEXT,
                 priority INTEGER DEFAULT 5,
+                -- locked_by references workers.name (no formal FK so SQLite
+                -- busy_timeout / WAL semantics are unaffected).  fetch_next
+                -- uses a LEFT JOIN on workers.name to detect stale locks.
+                -- If you add cascading behaviour (e.g. auto-release on worker
+                -- deletion) add a proper FOREIGN KEY + PRAGMA foreign_keys=ON.
                 locked_by TEXT,
                 locked_at TEXT,
                 last_error TEXT,
