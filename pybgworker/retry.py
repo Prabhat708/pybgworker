@@ -22,6 +22,7 @@ def retry(task_id):
             SET status='queued',
                 attempt=0,
                 last_error=NULL,
+                finished_at=NULL,
                 updated_at=?
             WHERE id=?
         """, (now().isoformat(), task_id))

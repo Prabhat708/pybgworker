@@ -24,11 +24,8 @@ class RateLimiter:
     """
 
     def __init__(self, rate_per_sec):
-        # default/global start-rate (tasks started per second)
         self.default_rate = rate_per_sec
-        self.lock = threading.Lock()
-        # Per-name sliding-window timestamp lists.
-        # Keyed by task name; unknown names are auto-initialised to [].
+        self.locks = defaultdict(threading.Lock)
         self.timestamps = defaultdict(list)
 
     def acquire(self, rate=None, name="__global__"):
@@ -48,7 +45,7 @@ class RateLimiter:
         if not limit or limit <= 0:
             return
 
-        with self.lock:
+        with self.locks[name]:
             now = time.time()
             bucket = self.timestamps[name]
 

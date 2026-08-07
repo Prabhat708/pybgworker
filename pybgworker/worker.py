@@ -187,7 +187,8 @@ def start_task(task):
 
     process.start()
 
-    timeout = meta.get("timeout") or TASK_TIMEOUT
+    user_timeout = meta.get("timeout")
+    timeout = user_timeout if user_timeout is not None else TASK_TIMEOUT
 
     return {
         "task": task,
@@ -211,6 +212,9 @@ def handle_timeout(task_id, info):
     info["process"].terminate()
 
     backend_info = backend.get_task(task_id)
+    if not backend_info:
+        log("task_not_found", task_id=task_id)
+        return
     if backend_info["status"] == "cancelled":
         log("task_cancelled", task_id=task_id)
         return
@@ -273,9 +277,16 @@ def handle_completed(task_id, info):
     meta = TASK_REGISTRY.get(info["task"]["name"], {})
 
     if result_queue.empty():
-        queue.fail(task_id, "Task crashed")
-        log("task_crash", task_id=task_id)
-        _fire_callback(meta.get("on_failure"), task_id, "Task crashed")
+        task = info["task"]
+        if task["attempt"] < task["max_retries"]:
+            delay = compute_retry_delay(task, info["retry_meta"])
+            queue.reschedule(task_id, delay)
+            log("task_crash", task_id=task_id)
+            log("task_retry_scheduled", task_id=task_id, delay=delay)
+        else:
+            queue.fail(task_id, "Task crashed")
+            log("task_crash", task_id=task_id)
+            _fire_callback(meta.get("on_failure"), task_id, "Task crashed")
         return
 
     item = result_queue.get()
