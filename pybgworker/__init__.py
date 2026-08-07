@@ -1,6 +1,6 @@
 from .task import task
-from .result import AsyncResult
+from .result import AsyncResult, TaskFailedError, TaskCancelledError
 
-__all__ = ["task", "AsyncResult"]
+__all__ = ["task", "AsyncResult", "TaskFailedError", "TaskCancelledError"]
 __version__ = "0.3.0"
 
