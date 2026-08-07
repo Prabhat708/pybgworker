@@ -118,7 +118,10 @@ def run_task(func, args, kwargs, result_queue):
         result = func(*args, **kwargs)
         result_queue.put(("success", result))
     except Exception as exc:
-        result_queue.put(("error", traceback.format_exc(), type(exc).__name__))
+        # Send the full MRO so the parent can do inheritance-aware matching
+        # e.g. ValueError's MRO is ["ValueError", "Exception", "BaseException", "object"]
+        mro_names = [c.__name__ for c in type(exc).__mro__]
+        result_queue.put(("error", traceback.format_exc(), type(exc).__name__, mro_names))
 
 
 def compute_retry_delay(task, meta):
@@ -212,10 +215,22 @@ def handle_timeout(task_id, info):
         log("task_dead", task_id=task_id)
 
 
-def _exc_matches_retry_for(exc_class_name, retry_for):
-    """Return True if the raised exception class name matches any type in retry_for."""
+def _exc_matches_retry_for(exc_class_name, exc_mro, retry_for):
+    """
+    Return True if the raised exception matches any type in retry_for,
+    respecting inheritance.
+
+    e.g. retry_for=(Exception,) will match ValueError, RuntimeError, etc.
+    because they are all subclasses of Exception.
+
+    exc_mro is the list of class names in the exception's MRO,
+    e.g. ["ValueError", "Exception", "BaseException", "object"].
+    This lets us check inheritance across the process boundary without
+    importing or reconstructing the exception type in the parent.
+    """
+    mro_set = set(exc_mro) if exc_mro else {exc_class_name}
     for exc_type in retry_for:
-        if exc_class_name == exc_type.__name__:
+        if exc_type.__name__ in mro_set:
             return True
     return False
 
@@ -232,6 +247,7 @@ def handle_completed(task_id, info):
     status = item[0]
     payload = item[1]
     exc_class_name = item[2] if len(item) > 2 else None
+    exc_mro = item[3] if len(item) > 3 else None
     duration = (now() - info["start_time"]).total_seconds()
 
     if status == "success":
@@ -248,8 +264,10 @@ def handle_completed(task_id, info):
     task = info["task"]
     retry_for = info["retry_meta"].get("retry_for", (Exception,))
 
-    # Check if the exception type is eligible for retry
-    exc_eligible = exc_class_name is None or _exc_matches_retry_for(exc_class_name, retry_for)
+    # Check inheritance-aware match across the process boundary
+    exc_eligible = exc_class_name is None or _exc_matches_retry_for(
+        exc_class_name, exc_mro, retry_for
+    )
 
     if exc_eligible and task["attempt"] < task["max_retries"]:
         delay = compute_retry_delay(task, info["retry_meta"])

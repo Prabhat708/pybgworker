@@ -3,6 +3,7 @@ from datetime import timedelta
 from .queue import BaseQueue
 from .config import DB_PATH, WORKER_TIMEOUT
 from .utils import now, get_conn
+from .state import validate_transition
 
 
 class SQLiteQueue(BaseQueue):
@@ -101,6 +102,10 @@ class SQLiteQueue(BaseQueue):
 
     def ack(self, task_id):
         with get_conn() as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute("SELECT status FROM tasks WHERE id=?", (task_id,)).fetchone()
+            if row:
+                validate_transition(row["status"], "success")
             conn.execute("""
                 UPDATE tasks
                 SET status='success',
@@ -116,6 +121,10 @@ class SQLiteQueue(BaseQueue):
 
     def fail(self, task_id, error):
         with get_conn() as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute("SELECT status FROM tasks WHERE id=?", (task_id,)).fetchone()
+            if row:
+                validate_transition(row["status"], "failed")
             conn.execute("""
                 UPDATE tasks
                 SET status='failed',
@@ -132,6 +141,10 @@ class SQLiteQueue(BaseQueue):
 
     def dead(self, task_id, error):
         with get_conn() as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute("SELECT status FROM tasks WHERE id=?", (task_id,)).fetchone()
+            if row:
+                validate_transition(row["status"], "dead")
             conn.execute("""
                 UPDATE tasks
                 SET status='dead',
@@ -149,6 +162,10 @@ class SQLiteQueue(BaseQueue):
     def reschedule(self, task_id, delay):
         run_at = now() + timedelta(seconds=delay)
         with get_conn() as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute("SELECT status FROM tasks WHERE id=?", (task_id,)).fetchone()
+            if row:
+                validate_transition(row["status"], "retrying")
             conn.execute("""
                 UPDATE tasks
                 SET status='retrying',
@@ -165,6 +182,10 @@ class SQLiteQueue(BaseQueue):
 
     def cancel(self, task_id):
         with get_conn() as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute("SELECT status FROM tasks WHERE id=?", (task_id,)).fetchone()
+            if row:
+                validate_transition(row["status"], "cancelled")
             conn.execute("""
                 UPDATE tasks
                 SET status='cancelled',

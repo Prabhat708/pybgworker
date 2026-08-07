@@ -3,15 +3,33 @@ import threading
 
 
 class RateLimiter:
+    """
+    Start-rate limiter: controls how many tasks can be *started* per second.
+
+    This is NOT a concurrency limiter. Setting rate_limit=5 means "start at most
+    5 tasks per second", not "run at most 5 tasks at the same time". For long-
+    running tasks, many more than `rate_limit` executions may be in-flight
+    simultaneously once they have all been started.
+
+    To cap the number of tasks executing concurrently, use the worker-level
+    `concurrency` setting (WORKER_CONCURRENCY env var / --concurrency flag),
+    which controls total in-flight slots across all task types.
+    """
+
     def __init__(self, rate_per_sec):
-        # default/global rate
+        # default/global start-rate (tasks started per second)
         self.default_rate = rate_per_sec
         self.lock = threading.Lock()
         self.timestamps = []
 
     def acquire(self, rate=None):
         """
-        rate: optional per-task rate limit
+        Block until a start-rate token is available.
+
+        Args:
+            rate: per-task-name start-rate override (tasks/sec). Falls back
+                  to the global default when not set. This limits how quickly
+                  new tasks are *started*, not how many run concurrently.
         """
         limit = rate or self.default_rate
 

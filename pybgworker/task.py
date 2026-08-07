@@ -31,6 +31,7 @@ def task(
         # Store task metadata
         TASK_REGISTRY[task_name] = {
             "func": func,
+            "max_retries": retries,
             "retry_delay": retry_delay,
             "retry_backoff": retry_backoff,
             "retry_backoff_factor": retry_backoff_factor,
@@ -76,6 +77,7 @@ def task(
             return AsyncResult(task["id"], backend=backend)
 
         func.delay = delay
+        func._task_name = task_name  # expose registered name for scheduler lookup
         return func
 
     return decorator

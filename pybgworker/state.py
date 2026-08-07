@@ -12,7 +12,7 @@ class TaskState(str, Enum):
 
 
 ALLOWED_TRANSITIONS = {
-    TaskState.QUEUED: {TaskState.RUNNING},
+    TaskState.QUEUED: {TaskState.RUNNING, TaskState.CANCELLED},
     TaskState.RUNNING: {
         TaskState.SUCCESS,
         TaskState.RETRYING,
@@ -20,7 +20,7 @@ ALLOWED_TRANSITIONS = {
         TaskState.DEAD,
         TaskState.CANCELLED,
     },
-    TaskState.RETRYING: {TaskState.RUNNING},
+    TaskState.RETRYING: {TaskState.RUNNING, TaskState.CANCELLED},
 }
 
 
