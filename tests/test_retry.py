@@ -14,16 +14,12 @@ from pybgworker.config import DB_PATH
 
 TEST_DB = "test_pybgworker.db"
 
-def _safe_remove(path, retries=5, delay=0.05):
-    for _ in range(retries):
-        try:
-            os.remove(path)
-            return
-        except PermissionError:
-            gc.collect()
-            time.sleep(delay)
-    if os.path.exists(path):
-        os.remove(path)
+def _clear_db(db_path):
+    from pybgworker.utils import get_conn
+    with get_conn(db_path) as conn:
+        conn.execute("DELETE FROM tasks")
+        conn.execute("DELETE FROM workers")
+        conn.commit()
 
 @pytest.fixture(autouse=True)
 def setup_test_db(monkeypatch):
@@ -40,17 +36,13 @@ def setup_test_db(monkeypatch):
     queue.db_path = TEST_DB
     backend.db_path = TEST_DB
 
-    # Remove old test DB if exists
-    if os.path.exists(TEST_DB):
-        _safe_remove(TEST_DB)
-
     # Re-initialize tables for the global queue
     queue._init_db()
+    _clear_db(TEST_DB)
 
     yield
 
-    if os.path.exists(TEST_DB):
-        _safe_remove(TEST_DB)
+    _clear_db(TEST_DB)
 
 
 # --- TEST TASK ---

@@ -26,4 +26,4 @@ ALLOWED_TRANSITIONS = {
 
 def validate_transition(old, new):
     if new not in ALLOWED_TRANSITIONS.get(TaskState(old), set()):
-        raise ValueError(f"Invalid transition {old} → {new}")
+        raise ValueError(f"Invalid transition {old} -> {new}")

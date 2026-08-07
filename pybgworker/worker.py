@@ -56,8 +56,15 @@ def handle_shutdown(signum, frame):
             processes = [info["process"] for info in active_tasks.values()]
 
         for task_id in task_ids:
-            queue.cancel(task_id)
-            log("task_cancelled", task_id=task_id)
+            try:
+                queue.cancel(task_id)
+                log("task_cancelled", task_id=task_id)
+            except ValueError:
+                # Task already reached a terminal state (success/failed/dead)
+                # between the active_tasks snapshot and this cancel attempt.
+                # Safe to ignore — the task is already done.
+                log("task_cancel_skipped", task_id=task_id,
+                    reason="already in terminal state")
 
         for process in processes:
             if process.is_alive():
@@ -222,11 +229,22 @@ def handle_timeout(task_id, info):
     task = info["task"]
     if task["attempt"] < task["max_retries"]:
         delay = compute_retry_delay(task, info["retry_meta"])
-        queue.reschedule(task_id, delay)
+        try:
+            queue.reschedule(task_id, delay)
+        except ValueError:
+            # Task was cancelled externally between the status check and here.
+            log("task_cancel_skipped", task_id=task_id,
+                reason="cancelled before timeout reschedule")
+            return
         log("task_timeout", task_id=task_id)
         log("task_retry_scheduled", task_id=task_id, delay=delay)
     else:
-        queue.dead(task_id, "Task timeout")
+        try:
+            queue.dead(task_id, "Task timeout")
+        except ValueError:
+            log("task_cancel_skipped", task_id=task_id,
+                reason="cancelled before timeout dead-letter")
+            return
         log("task_timeout", task_id=task_id)
         log("task_dead", task_id=task_id)
         meta = TASK_REGISTRY.get(task["name"], {})
@@ -280,11 +298,21 @@ def handle_completed(task_id, info):
         task = info["task"]
         if task["attempt"] < task["max_retries"]:
             delay = compute_retry_delay(task, info["retry_meta"])
-            queue.reschedule(task_id, delay)
+            try:
+                queue.reschedule(task_id, delay)
+            except ValueError:
+                log("task_cancel_skipped", task_id=task_id,
+                    reason="cancelled before crash reschedule")
+                return
             log("task_crash", task_id=task_id)
             log("task_retry_scheduled", task_id=task_id, delay=delay)
         else:
-            queue.fail(task_id, "Task crashed")
+            try:
+                queue.fail(task_id, "Task crashed")
+            except ValueError:
+                log("task_cancel_skipped", task_id=task_id,
+                    reason="cancelled before crash fail")
+                return
             log("task_crash", task_id=task_id)
             _fire_callback(meta.get("on_failure"), task_id, "Task crashed")
         return
@@ -298,7 +326,12 @@ def handle_completed(task_id, info):
 
     if status == "success":
         backend.store_result(task_id, payload)
-        queue.ack(task_id)
+        try:
+            queue.ack(task_id)
+        except ValueError:
+            log("task_cancel_skipped", task_id=task_id,
+                reason="cancelled before ack")
+            return
         log(
             "task_success",
             task_id=task_id,
@@ -318,12 +351,22 @@ def handle_completed(task_id, info):
 
     if exc_eligible and task["attempt"] < task["max_retries"]:
         delay = compute_retry_delay(task, info["retry_meta"])
-        queue.reschedule(task_id, delay)
+        try:
+            queue.reschedule(task_id, delay)
+        except ValueError:
+            log("task_cancel_skipped", task_id=task_id,
+                reason="cancelled before error reschedule")
+            return
         log("task_retry_scheduled", task_id=task_id, delay=delay)
     else:
         if not exc_eligible:
             log("task_retry_skipped", task_id=task_id, exc_type=exc_class_name)
-        queue.dead(task_id, payload)
+        try:
+            queue.dead(task_id, payload)
+        except ValueError:
+            log("task_cancel_skipped", task_id=task_id,
+                reason="cancelled before dead-letter")
+            return
         log("task_dead", task_id=task_id)
         _fire_callback(meta.get("on_failure"), task_id, payload)
 

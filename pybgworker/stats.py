@@ -33,6 +33,14 @@ def stats(as_json=False):
 
     worker_list = []
     for w in workers_raw:
+        if w[1] is None:
+            worker_list.append({
+                "name": w[0],
+                "last_seen": None,
+                "status": "unknown",
+                "seconds_ago": None,
+            })
+            continue
         last_seen = datetime.fromisoformat(w[1])
         delta = (now - last_seen).total_seconds()
         worker_list.append({
@@ -49,7 +57,10 @@ def stats(as_json=False):
         }, indent=2))
         return
 
-    print("\n👷 Worker Stats\n")
+    print("\n[Worker Stats]\n")
     for w in worker_list:
-        print(f"{w['name']:10} {w['status']:5} ({w['seconds_ago']}s ago)")
-    print(f"\n📦 Queue depth: {queued}\n")
+        if w["seconds_ago"] is None:
+            print(f"  {w['name']:10} {w['status']:7} (no heartbeat)")
+        else:
+            print(f"  {w['name']:10} {w['status']:7} ({w['seconds_ago']}s ago)")
+    print(f"\n[Queue depth: {queued}]\n")

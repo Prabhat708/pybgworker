@@ -182,7 +182,7 @@ class AsyncResult:
                     state=current_status,
                 )
 
-            if timeout and time.time() - start_time > timeout:
+            if timeout is not None and time.time() - start_time > timeout:
                 raise TimeoutError("Timeout waiting for task to complete")
             time.sleep(0.1)
 

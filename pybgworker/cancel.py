@@ -17,16 +17,19 @@ def cancel(task_id):
             log("task_not_cancellable", task_id=task_id, status=row[0])
             return
 
-        conn.execute("""
-            UPDATE tasks
-            SET status='cancelled',
-                finished_at=?,
-                updated_at=?,
-                locked_by=NULL,
-                locked_at=NULL
-            WHERE id=?
-        """, (now().isoformat(), now().isoformat(), task_id))
-
-        conn.commit()
+    # Delegate to the queue's cancel() which calls validate_transition()
+    # and keeps all cancel logic in a single place. This ensures cancel.py
+    # stays in sync with any future state-machine changes in state.py.
+    # Wrap in try/except for TOCTOU safety: the task could transition to a
+    # terminal state (success/failed/dead) between the status check above
+    # and the actual cancel — in which case validate_transition() raises
+    # ValueError. We log it as a warning instead of crashing the CLI.
+    from .sqlite_queue import SQLiteQueue
+    try:
+        SQLiteQueue().cancel(task_id)
+    except ValueError:
+        log("task_cancel_skipped", task_id=task_id,
+            reason="task transitioned to terminal state before cancel completed")
+        return
 
     log("task_cancelled", task_id=task_id)

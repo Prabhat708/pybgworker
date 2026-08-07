@@ -24,9 +24,6 @@ is a no-op so existing tests keep working without modification.
 """
 
 import os
-from .sqlite_queue import SQLiteQueue
-
-_queue = SQLiteQueue()
 
 
 def set_progress(percent: int, message: str = None) -> None:
@@ -43,6 +40,15 @@ def set_progress(percent: int, message: str = None) -> None:
     task_id = os.environ.get("PYBGWORKER_CURRENT_TASK_ID")
     if not task_id:
         return
+
+    # Instantiate lazily using the current config.DB_PATH so that any
+    # runtime override of PYBGWORKER_DB (e.g. in tests) is respected.
+    # A module-level singleton would bake in the DB path at import time,
+    # causing set_progress() to silently write to the wrong database when
+    # the path is changed after the module is first imported.
+    from .config import DB_PATH
+    from .sqlite_queue import SQLiteQueue
+    _queue = SQLiteQueue(DB_PATH)
 
     percent = max(0, min(100, int(percent)))
     _queue.set_progress(task_id, percent, message)

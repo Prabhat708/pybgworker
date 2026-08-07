@@ -41,6 +41,14 @@ def inspect(as_json=False):
 
     worker_list = []
     for w in workers:
+        if w["last_seen"] is None:
+            worker_list.append({
+                "name": w["name"],
+                "last_seen": None,
+                "status": "unknown",
+                "seconds_ago": None,
+            })
+            continue
         last_seen = datetime.fromisoformat(w["last_seen"])
         delta = (now - last_seen).total_seconds()
         worker_list.append({
@@ -58,14 +66,17 @@ def inspect(as_json=False):
         }, indent=2))
         return
 
-    print("\n📦 Task Stats")
+    print("\n[Tasks]")
     for status, count in task_counts.items():
-        print(f"{status:10} {count}")
-    print(f"{'total':10} {total}")
+        print(f"  {status:10} {count}")
+    print(f"  {'total':10} {total}")
 
-    print("\n👷 Workers")
+    print("\n[Workers]")
     for w in worker_list:
-        print(f"{w['name']:10} {w['status']:5} ({w['seconds_ago']}s ago)")
+        if w["seconds_ago"] is None:
+            print(f"  {w['name']:10} {w['status']:7} (no heartbeat)")
+        else:
+            print(f"  {w['name']:10} {w['status']:7} ({w['seconds_ago']}s ago)")
     print()
 
 

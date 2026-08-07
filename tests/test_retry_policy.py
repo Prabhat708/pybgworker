@@ -13,16 +13,12 @@ from pybgworker.sqlite_queue import SQLiteQueue
 
 TEST_DB = "test_pybgworker_policy.db"
 
-def _safe_remove(path, retries=5, delay=0.05):
-    for _ in range(retries):
-        try:
-            os.remove(path)
-            return
-        except PermissionError:
-            # give SQLite time to release file handles on Windows
-            gc.collect()
-            time.sleep(delay)
-    os.remove(path)
+def _clear_db(db_path):
+    from pybgworker.utils import get_conn
+    with get_conn(db_path) as conn:
+        conn.execute("DELETE FROM tasks")
+        conn.execute("DELETE FROM workers")
+        conn.commit()
 
 
 @pytest.fixture(autouse=True)
@@ -31,45 +27,9 @@ def setup_db(monkeypatch):
     config.DB_PATH = TEST_DB
     utils.DB_PATH = TEST_DB
 
-    if os.path.exists(TEST_DB):
-        _safe_remove(TEST_DB)
-
+    _clear_db(TEST_DB)
     yield
-
-    if os.path.exists(TEST_DB):
-        _safe_remove(TEST_DB)
-
-
-def test_compute_retry_delay_backoff_and_jitter(monkeypatch):
-    task = {"attempt": 2}
-    meta = {
-        "retry_delay": 1,
-        "retry_backoff": True,
-        "retry_backoff_factor": 2,
-        "retry_max_delay": None,
-        "retry_jitter": 0.5,
-    }
-
-    monkeypatch.setattr(worker.random, "uniform", lambda a, b: a)
-
-    delay = worker.compute_retry_delay(task, meta)
-
-    # base=1, factor=2, attempt=2 => 4; jitter=0.5 => jitter_amount=2; uniform returns -2
-    assert delay == 2
-
-
-def test_compute_retry_delay_negative_base_and_cap(monkeypatch):
-    task = {"attempt": 3}
-    meta = {
-        "retry_delay": -5,
-        "retry_backoff": True,
-        "retry_backoff_factor": 2,
-        "retry_max_delay": 10,
-        "retry_jitter": 3,
-    }
-
-    monkeypatch.setattr(worker.random, "uniform", lambda a, b: b)
-
+    _clear_db(TEST_DB)
 
 
 def test_compute_retry_delay_backoff_and_jitter(monkeypatch):

@@ -1,4 +1,5 @@
 from functools import wraps
+import json
 from datetime import timedelta
 from .sqlite_queue import SQLiteQueue
 from .utils import generate_id, dumps, now
@@ -75,9 +76,9 @@ def task(
                              priority=5, idempotency_key=None):
             """Build the raw task dict for DB insertion."""
             run_at = now()
-            if countdown:
+            if countdown is not None:
                 run_at += timedelta(seconds=countdown)
-            if eta:
+            if eta is not None:
                 run_at = eta
 
             return {
@@ -115,7 +116,23 @@ def task(
                     If a task with this key already exists (any state) the
                     existing :class:`AsyncResult` is returned without inserting.
                 **kwargs: Keyword arguments forwarded to the task function.
+
+            Raises:
+                TypeError: If *args* or *kwargs* contain non-JSON-serializable
+                    values.  Task arguments must be primitives (str, int, float,
+                    bool, list, dict, None).
             """
+            # Validate serializability early so the error points here, not deep
+            # inside the enqueue pipeline.
+            try:
+                json.dumps(args)
+                json.dumps(kwargs)
+            except TypeError as exc:
+                raise TypeError(
+                    f"Task arguments must be JSON-serializable. "
+                    f"Got non-serializable value in '{task_name}': {exc}"
+                ) from exc
+
             task_dict = _build_task_dict(
                 args, kwargs,
                 countdown=countdown, eta=eta,

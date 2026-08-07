@@ -21,11 +21,12 @@ def retry(task_id):
             UPDATE tasks
             SET status='queued',
                 attempt=0,
+                run_at=?,
                 last_error=NULL,
                 finished_at=NULL,
                 updated_at=?
             WHERE id=?
-        """, (now().isoformat(), task_id))
+        """, (now().isoformat(), now().isoformat(), task_id))
 
         conn.commit()
 
