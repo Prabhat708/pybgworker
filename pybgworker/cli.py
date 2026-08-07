@@ -38,6 +38,12 @@ def main():
         type=int,
         help="hours between automatic cleanup runs"
     )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        default=False,
+        help="emit output as JSON instead of formatted text (inspect, stats)",
+    )
 
     args = parser.parse_args()
 
@@ -63,7 +69,7 @@ def main():
 
     elif args.command == "inspect":
         from .inspect import inspect
-        inspect()
+        inspect(as_json=args.json)
 
     elif args.command == "retry":
         if not args.task_id:
@@ -91,7 +97,7 @@ def main():
 
     elif args.command == "stats":
         from .stats import stats
-        stats()
+        stats(as_json=args.json)
 
 
 if __name__ == "__main__":

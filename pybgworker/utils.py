@@ -21,8 +21,16 @@ def loads(data):
     return json.loads(data)
 
 
-def get_conn():
-    conn = sqlite3.connect(DB_PATH, timeout=30)
+def get_conn(db_path=None):
+    """Return a new SQLite connection.
+
+    Args:
+        db_path: Path to the database file. Defaults to ``config.DB_PATH``
+                 (the process-global ``PYBGWORKER_DB`` setting) when omitted
+                 or ``None``.  Pass an explicit path to use an isolated
+                 database — e.g. for tests or multi-tenant setups.
+    """
+    conn = sqlite3.connect(db_path or DB_PATH, timeout=30)
 
     # production SQLite settings
     conn.execute("PRAGMA journal_mode=WAL;")

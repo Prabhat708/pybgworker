@@ -21,7 +21,9 @@ def cancel(task_id):
             UPDATE tasks
             SET status='cancelled',
                 finished_at=?,
-                updated_at=?
+                updated_at=?,
+                locked_by=NULL,
+                locked_at=NULL
             WHERE id=?
         """, (now().isoformat(), now().isoformat(), task_id))
 

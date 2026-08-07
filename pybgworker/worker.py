@@ -110,10 +110,19 @@ def maintenance_loop():
         time.sleep(interval_seconds)
 
 
-def run_task(func, args, kwargs, result_queue):
-    # Child process ignores Ctrl+C
-    signal.signal(signal.SIGINT, signal.SIG_IGN)
+def _run_task_with_id(task_id, func, args, kwargs, result_queue):
+    """Thin wrapper executed in each child process.
 
+    Sets ``PYBGWORKER_CURRENT_TASK_ID`` so that :func:`~pybgworker.progress.set_progress`
+    can find the current task id without needing context injection.
+    Ignores SIGINT so Ctrl+C in the parent does not race with state updates.
+    """
+    os.environ["PYBGWORKER_CURRENT_TASK_ID"] = task_id
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+    run_task(func, args, kwargs, result_queue)
+
+
+def run_task(func, args, kwargs, result_queue):
     try:
         result = func(*args, **kwargs)
         result_queue.put(("success", result))
@@ -161,7 +170,7 @@ def start_task(task):
         log("task_invalid", task_id=task["id"])
         return None
 
-    limiter.acquire(meta.get("rate_limit"))
+    limiter.acquire(meta.get("rate_limit"), name=task["name"])
 
     func = meta["func"]
     args = loads(task["args"])
@@ -171,7 +180,10 @@ def start_task(task):
     log("task_start", task_id=task_id, worker=WORKER_NAME)
 
     result_queue = MPQueue()
-    process = Process(target=run_task, args=(func, args, kwargs, result_queue))
+    process = Process(
+        target=_run_task_with_id,
+        args=(task_id, func, args, kwargs, result_queue),
+    )
 
     process.start()
 
@@ -213,11 +225,12 @@ def handle_timeout(task_id, info):
         queue.dead(task_id, "Task timeout")
         log("task_timeout", task_id=task_id)
         log("task_dead", task_id=task_id)
+        meta = TASK_REGISTRY.get(task["name"], {})
+        _fire_callback(meta.get("on_failure"), task_id, "Task timeout")
 
 
 def _exc_matches_retry_for(exc_class_name, exc_mro, retry_for):
-    """
-    Return True if the raised exception matches any type in retry_for,
+    """Return True if the raised exception matches any type in retry_for,
     respecting inheritance.
 
     e.g. retry_for=(Exception,) will match ValueError, RuntimeError, etc.
@@ -235,12 +248,34 @@ def _exc_matches_retry_for(exc_class_name, exc_mro, retry_for):
     return False
 
 
+def _fire_callback(callback, *args):
+    """Invoke a user-supplied callback, logging but not re-raising exceptions."""
+    if callback is None:
+        return
+    try:
+        callback(*args)
+    except Exception:
+        log("callback_error", error=traceback.format_exc())
+
+
 def handle_completed(task_id, info):
+    # Re-check DB status: an external cancel (e.g. `pybgworker cancel <id>`)
+    # may have set status='cancelled' while the subprocess was still executing.
+    # If so, skip all queue transitions — calling ack/fail/reschedule on a
+    # cancelled task raises ValueError from validate_transition() and would
+    # propagate up to crash the entire run_worker() thread.
+    current = backend.get_task(task_id)
+    if current and current["status"] == "cancelled":
+        log("task_cancelled", task_id=task_id)
+        return
+
     result_queue = info["result_queue"]
+    meta = TASK_REGISTRY.get(info["task"]["name"], {})
 
     if result_queue.empty():
         queue.fail(task_id, "Task crashed")
         log("task_crash", task_id=task_id)
+        _fire_callback(meta.get("on_failure"), task_id, "Task crashed")
         return
 
     item = result_queue.get()
@@ -259,6 +294,7 @@ def handle_completed(task_id, info):
             duration=duration,
             worker=WORKER_NAME,
         )
+        _fire_callback(meta.get("on_success"), task_id)
         return
 
     task = info["task"]
@@ -278,6 +314,7 @@ def handle_completed(task_id, info):
             log("task_retry_skipped", task_id=task_id, exc_type=exc_class_name)
         queue.dead(task_id, payload)
         log("task_dead", task_id=task_id)
+        _fire_callback(meta.get("on_failure"), task_id, payload)
 
 
 def run_worker():

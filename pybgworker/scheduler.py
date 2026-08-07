@@ -51,15 +51,12 @@ def run_scheduler():
                     "kwargs": dumps({}),
                     "status": TaskState.QUEUED.value,
                     "attempt": 0,
-                    # Retry configuration — mirrors what delay() stores.
+                    # max_retries is a DB column — stores the retry cap so the
+                    # worker can compare attempt vs max_retries without hitting
+                    # TASK_REGISTRY again. All other retry metadata (retry_delay,
+                    # retry_backoff, etc.) is NOT a DB column — the worker reads
+                    # those from TASK_REGISTRY at execution time.
                     "max_retries": meta.get("max_retries", 0),
-                    "retry_delay": meta.get("retry_delay", 0),
-                    "retry_backoff": meta.get("retry_backoff", False),
-                    "retry_backoff_factor": meta.get("retry_backoff_factor", 2),
-                    "retry_max_delay": meta.get("retry_max_delay", None),
-                    "retry_jitter": meta.get("retry_jitter", 0.0),
-                    # Execution options — mirrors what delay() stores.
-                    "timeout": meta.get("timeout", None),
                     "run_at": now().isoformat(),
                     "priority": meta.get("priority", 5),
                     "locked_by": None,
@@ -69,6 +66,8 @@ def run_scheduler():
                     "created_at": now().isoformat(),
                     "updated_at": now().isoformat(),
                     "finished_at": None,
+                    "progress": None,
+                    "idempotency_key": None,
                 }
 
                 queue.enqueue(task)

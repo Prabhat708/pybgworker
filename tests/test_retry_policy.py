@@ -70,6 +70,38 @@ def test_compute_retry_delay_negative_base_and_cap(monkeypatch):
 
     monkeypatch.setattr(worker.random, "uniform", lambda a, b: b)
 
+
+
+def test_compute_retry_delay_backoff_and_jitter(monkeypatch):
+    task = {"attempt": 2}
+    meta = {
+        "retry_delay": 1,
+        "retry_backoff": True,
+        "retry_backoff_factor": 2,
+        "retry_max_delay": None,
+        "retry_jitter": 0.5,
+    }
+
+    monkeypatch.setattr(worker.random, "uniform", lambda a, b: a)
+
+    delay = worker.compute_retry_delay(task, meta)
+
+    # base=1, factor=2, attempt=2 => 4; jitter=0.5 => jitter_amount=2; uniform returns -2
+    assert delay == 2
+
+
+def test_compute_retry_delay_negative_base_and_cap(monkeypatch):
+    task = {"attempt": 3}
+    meta = {
+        "retry_delay": -5,
+        "retry_backoff": True,
+        "retry_backoff_factor": 2,
+        "retry_max_delay": 10,
+        "retry_jitter": 3,
+    }
+
+    monkeypatch.setattr(worker.random, "uniform", lambda a, b: b)
+
     delay = worker.compute_retry_delay(task, meta)
 
     # negative base becomes 0, backoff keeps 0, jitter adds up to +3
@@ -78,7 +110,7 @@ def test_compute_retry_delay_negative_base_and_cap(monkeypatch):
 
 def _insert_task(conn, task_id, status, created_at, finished_at=None, result=None):
     conn.execute(
-        "INSERT INTO tasks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO tasks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (
             task_id,
             "test.task",
@@ -96,6 +128,8 @@ def _insert_task(conn, task_id, status, created_at, finished_at=None, result=Non
             created_at,
             created_at,
             finished_at,
+            None,   # progress
+            None,   # idempotency_key
         ),
     )
 
