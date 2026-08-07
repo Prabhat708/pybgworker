@@ -117,8 +117,8 @@ def run_task(func, args, kwargs, result_queue):
     try:
         result = func(*args, **kwargs)
         result_queue.put(("success", result))
-    except Exception:
-        result_queue.put(("error", traceback.format_exc()))
+    except Exception as exc:
+        result_queue.put(("error", traceback.format_exc(), type(exc).__name__))
 
 
 def compute_retry_delay(task, meta):
@@ -187,6 +187,7 @@ def start_task(task):
             "retry_backoff_factor": meta.get("retry_backoff_factor"),
             "retry_max_delay": meta.get("retry_max_delay"),
             "retry_jitter": meta.get("retry_jitter"),
+            "retry_for": meta.get("retry_for", (Exception,)),
         },
     }
 
@@ -211,6 +212,14 @@ def handle_timeout(task_id, info):
         log("task_dead", task_id=task_id)
 
 
+def _exc_matches_retry_for(exc_class_name, retry_for):
+    """Return True if the raised exception class name matches any type in retry_for."""
+    for exc_type in retry_for:
+        if exc_class_name == exc_type.__name__:
+            return True
+    return False
+
+
 def handle_completed(task_id, info):
     result_queue = info["result_queue"]
 
@@ -219,7 +228,10 @@ def handle_completed(task_id, info):
         log("task_crash", task_id=task_id)
         return
 
-    status, payload = result_queue.get()
+    item = result_queue.get()
+    status = item[0]
+    payload = item[1]
+    exc_class_name = item[2] if len(item) > 2 else None
     duration = (now() - info["start_time"]).total_seconds()
 
     if status == "success":
@@ -234,11 +246,20 @@ def handle_completed(task_id, info):
         return
 
     task = info["task"]
-    if task["attempt"] < task["max_retries"]:
+    retry_for = info["retry_meta"].get("retry_for", (Exception,))
+
+    # Check if the exception type is eligible for retry
+    exc_eligible = exc_class_name is None or _exc_matches_retry_for(exc_class_name, retry_for)
+
+    if exc_eligible and task["attempt"] < task["max_retries"]:
         delay = compute_retry_delay(task, info["retry_meta"])
         queue.reschedule(task_id, delay)
+        log("task_retry_scheduled", task_id=task_id, delay=delay)
     else:
+        if not exc_eligible:
+            log("task_retry_skipped", task_id=task_id, exc_type=exc_class_name)
         queue.dead(task_id, payload)
+        log("task_dead", task_id=task_id)
 
 
 def run_worker():

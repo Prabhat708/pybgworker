@@ -116,7 +116,7 @@ from tasks import addresult = add.delay(5, 7)print("Task ID:", result.id)
 
 ### Step 4 — Fetch result
 
-print(result.ready())print(result.result())
+print(result.ready())print(result.result)
 
 ## 6. Defining Tasks
 
@@ -220,7 +220,7 @@ Lower value = higher priority.
 
 ## 12. Task Status & Results
 
-res = add.delay(3, 4)print(res.status())print(res.result())
+res = add.delay(3, 4)print(res.status)print(res.result)
 
 Possible states:
 
@@ -499,7 +499,7 @@ Worker retries until success or retry limit reached.
 
 Applications can monitor progress.
 
-res = add.delay(1, 2)print(res.status())
+res = add.delay(1, 2)print(res.status)
 
 Used in dashboards or admin panels.
 

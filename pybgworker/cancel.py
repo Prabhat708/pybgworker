@@ -13,8 +13,8 @@ def cancel(task_id):
             log("task_not_found", task_id=task_id)
             return
 
-        if row[0] != "running":
-            log("task_not_running", task_id=task_id)
+        if row[0] not in ("queued", "running", "retrying"):
+            log("task_not_cancellable", task_id=task_id, status=row[0])
             return
 
         conn.execute("""
