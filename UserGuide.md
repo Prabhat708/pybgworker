@@ -163,6 +163,11 @@ hello.delay("Prabhat")
 | `on_success` | callable | `None` | Called after success: `fn(task_id)`. |
 | `on_failure` | callable | `None` | Called after permanent failure: `fn(task_id, error)`. |
 
+### Important: JSON Serialization Constraint
+
+PyBgWorker uses JSON to serialize task arguments and return values. This means you **must only pass JSON-serializable types** (strings, ints, floats, lists, dicts) to `.delay()`. 
+Passing complex Python objects (e.g., `datetime` objects, database connections, or custom class instances) will raise a `TypeError` and crash before enqueueing.
+
 ---
 
 ## 7. Task Scheduling
@@ -309,6 +314,7 @@ res.status    # "queued" | "running" | "success" | "failed" | "dead" | "cancelle
 res.result    # deserialized return value when success, else None
 res.error     # traceback string when failed/dead, else None
 res.progress  # {"percent": int, "message": str|None} or None
+res.task_info # dict of the raw SQLite task row (includes created_at, attempt, etc.)
 ```
 
 > ⚠️ `res.status`, `res.result`, `res.error`, and `res.progress` are **properties**, not methods.
@@ -404,6 +410,17 @@ print(res.result)
 
 `set_progress()` is a no-op when called outside a worker (e.g. in tests), so no test code needs to change.
 
+### Accessing the Task ID
+
+From inside a running task, you can always access the current task ID via the environment variable injected by the worker:
+
+```python
+import os
+task_id = os.environ.get("PYBGWORKER_CURRENT_TASK_ID")
+```
+
+This is particularly useful if you want to include the task ID in your own structured logging.
+
 ---
 
 ## 14. Bulk / Batch Enqueue
@@ -423,6 +440,8 @@ results = send_email.delay_many([
 ```
 
 `delay_many` accepts an iterable of `(args_tuple, kwargs_dict)` pairs and an optional `priority` keyword argument that applies to all tasks in the batch.
+
+> ⚠️ **Limitation:** `delay_many` only supports the `priority` argument. You **cannot** pass `countdown`, `eta`, or `idempotency_key` when enqueueing tasks in bulk.
 
 ---
 
@@ -639,6 +658,8 @@ SQLite WAL locking distributes tasks safely.  Always set a unique `PYBGWORKER_WO
 ```bash
 python -m pybgworker.cli run --app tasks --retention-days 30
 ```
+
+When retention cleanup runs, it deletes old tasks and also automatically executes an SQLite `VACUUM` command to reclaim disk space, keeping your database small and performant.
 
 Or:
 
