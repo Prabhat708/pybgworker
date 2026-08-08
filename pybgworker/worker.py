@@ -124,7 +124,10 @@ def reap_stale_tasks_loop():
                 log("stale_tasks_reaped", count=reaped)
         except Exception as e:
             log("reap_stale_error", error=str(e))
-        time.sleep(60)
+        # Sleep for half WORKER_TIMEOUT so we detect crashes promptly,
+        # but at least 5s and at most 60s to avoid hammering the database.
+        interval = max(5, min(60, config.WORKER_TIMEOUT // 2))
+        time.sleep(interval)
 
 
 def _run_task_with_id(task_id, func, args, kwargs, result_queue):

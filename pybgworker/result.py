@@ -175,17 +175,33 @@ class AsyncResult:
                         state=current_status,
                     )
 
-                # Extract exception_class from the traceback if possible
+                # Extract exception_class from the traceback.
+                # Standard Python tracebacks end with one of:
+                #   ExceptionName: message
+                #   ExceptionName   (no message)
+                # The exception summary always immediately follows the last
+                # "  File ..." line. We find it by scanning from the end for
+                # the first line that does NOT start with whitespace AND is
+                # not the "Traceback (most recent call last):" header.
                 error_text = self.error
                 exc_class = None
                 if error_text:
                     lines = error_text.strip().split('\n')
-                    if lines:
-                        last_line = lines[-1]
-                        if ':' in last_line:
-                            exc_class = last_line.split(':')[0].strip()
-                            # Handle module prefixes like 'builtins.ValueError'
-                            exc_class = exc_class.split('.')[-1]
+                    for line in reversed(lines):
+                        stripped = line.strip()
+                        if not stripped:
+                            continue
+                        # Skip traceback frame lines (start with spaces or "File")
+                        if stripped.startswith("File ") or stripped.startswith("Traceback"):
+                            break
+                        if line[0] not in (' ', '\t'):
+                            # This is the exception summary line: "ExcClass: msg"
+                            # or just "ExcClass" with no message.
+                            candidate = stripped.split(':')[0].strip()
+                            # Accept only valid Python identifiers (class names)
+                            if candidate and candidate.replace('_', '').replace('.', '').isalnum():
+                                exc_class = candidate.split('.')[-1]
+                            break
 
                 # FAILED or DEAD
                 raise TaskFailedError(

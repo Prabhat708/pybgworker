@@ -114,21 +114,38 @@ class SQLiteQueue(BaseQueue):
         """
         idempotency_key = task.get("idempotency_key")
         with get_conn(self.db_path) as conn:
+            conn.execute("BEGIN IMMEDIATE")
             if idempotency_key:
                 # Check for an existing task with this key first.
+                # BEGIN IMMEDIATE above means no concurrent INSERT can slip in
+                # between this SELECT and our own INSERT below.
                 row = conn.execute(
                     "SELECT id FROM tasks WHERE idempotency_key=?",
                     (idempotency_key,)
                 ).fetchone()
                 if row:
+                    conn.execute("ROLLBACK")
                     return row[0]  # Duplicate — return existing id.
 
             columns = ",".join(task.keys())
             placeholders = ",".join(["?"] * len(task))
-            conn.execute(
-                f"INSERT INTO tasks ({columns}) VALUES ({placeholders})",
-                tuple(task.values())
-            )
+            try:
+                conn.execute(
+                    f"INSERT INTO tasks ({columns}) VALUES ({placeholders})",
+                    tuple(task.values())
+                )
+            except sqlite3.IntegrityError:
+                # Another concurrent writer beat us to the unique index.
+                # Look up and return the winner's id.
+                conn.execute("ROLLBACK")
+                if idempotency_key:
+                    row = conn.execute(
+                        "SELECT id FROM tasks WHERE idempotency_key=?",
+                        (idempotency_key,)
+                    ).fetchone()
+                    if row:
+                        return row[0]
+                raise  # Re-raise if this was a different integrity error
             conn.commit()
             return task["id"]
 
@@ -173,14 +190,25 @@ class SQLiteQueue(BaseQueue):
                     
             columns = ",".join(tasks[0].keys())
             placeholders = ",".join(["?"] * len(tasks[0]))
-            
+
+            # Also track keys seen for the first time within this batch,
+            # so a second item with the same key is remapped to the first's id.
+            seen_in_batch = {}
+
             for task in tasks:
                 ik = task.get("idempotency_key")
-                if ik and ik in key_to_id:
-                    # Update the task dict so caller gets the existing ID
-                    task["id"] = key_to_id[ik]
-                    continue
-                    
+                if ik:
+                    if ik in key_to_id:
+                        # Existing row in DB — remap this task's id
+                        task["id"] = key_to_id[ik]
+                        continue
+                    if ik in seen_in_batch:
+                        # Duplicate within this batch — remap to the first item's id
+                        task["id"] = seen_in_batch[ik]
+                        continue
+                    # First time seeing this key in the batch
+                    seen_in_batch[ik] = task["id"]
+
                 cur = conn.execute(
                     f"INSERT OR IGNORE INTO tasks ({columns}) VALUES ({placeholders})",
                     tuple(task.values())

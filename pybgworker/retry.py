@@ -4,16 +4,19 @@ from .logger import log
 
 def retry(task_id):
     with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
         row = conn.execute(
             "SELECT status FROM tasks WHERE id=?",
             (task_id,)
         ).fetchone()
 
         if not row:
+            conn.execute("ROLLBACK")
             log("task_not_found", task_id=task_id)
             return
 
         if row[0] not in ("failed", "dead"):
+            conn.execute("ROLLBACK")
             log("task_not_failed", task_id=task_id)
             return
 
