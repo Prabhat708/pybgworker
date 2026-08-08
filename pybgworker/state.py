@@ -21,6 +21,8 @@ ALLOWED_TRANSITIONS = {
         TaskState.CANCELLED,
     },
     TaskState.RETRYING: {TaskState.RUNNING, TaskState.CANCELLED},
+    TaskState.FAILED: {TaskState.QUEUED},
+    TaskState.DEAD: {TaskState.QUEUED},
 }
 
 

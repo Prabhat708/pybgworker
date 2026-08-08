@@ -17,6 +17,9 @@ def retry(task_id):
             log("task_not_failed", task_id=task_id)
             return
 
+        from .state import validate_transition
+        validate_transition(row[0], "queued")
+
         conn.execute("""
             UPDATE tasks
             SET status='queued',

@@ -175,9 +175,22 @@ class AsyncResult:
                         state=current_status,
                     )
 
+                # Extract exception_class from the traceback if possible
+                error_text = self.error
+                exc_class = None
+                if error_text:
+                    lines = error_text.strip().split('\n')
+                    if lines:
+                        last_line = lines[-1]
+                        if ':' in last_line:
+                            exc_class = last_line.split(':')[0].strip()
+                            # Handle module prefixes like 'builtins.ValueError'
+                            exc_class = exc_class.split('.')[-1]
+
                 # FAILED or DEAD
                 raise TaskFailedError(
-                    self.error or f"Task ended with status '{current_status}'",
+                    error_text or f"Task ended with status '{current_status}'",
+                    exception_class=exc_class,
                     task_id=self.task_id,
                     state=current_status,
                 )

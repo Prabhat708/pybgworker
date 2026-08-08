@@ -39,10 +39,10 @@ class RateLimiter:
             name: task name used to select the per-name bucket. Defaults to
                   ``"__global__"`` so callers that omit it share one bucket.
         """
-        limit = rate or self.default_rate
+        limit = rate if rate is not None else self.default_rate
 
         # No limit configured
-        if not limit or limit <= 0:
+        if limit is None or limit <= 0:
             return
 
         with self.locks[name]:

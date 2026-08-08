@@ -13,10 +13,9 @@ from .config import (
     WORKER_NAME,
     POLL_INTERVAL,
     RATE_LIMIT,
-    RETENTION_DAYS,
-    CLEANUP_INTERVAL_HOURS,
     get_worker_concurrency,
 )
+from . import config
 from .utils import loads, get_conn, now
 from .backends import SQLiteBackend
 from .scheduler import run_scheduler
@@ -94,18 +93,18 @@ def heartbeat():
 
 
 def maintenance_loop():
-    interval_hours = max(1, CLEANUP_INTERVAL_HOURS)
+    interval_hours = max(1, config.CLEANUP_INTERVAL_HOURS)
     interval_seconds = interval_hours * 3600
 
     while True:
         try:
             result = queue.cleanup(
-                retention_days=RETENTION_DAYS,
+                retention_days=config.RETENTION_DAYS,
                 vacuum=True,
             )
             log(
                 "db_cleanup",
-                retention_days=RETENTION_DAYS,
+                retention_days=config.RETENTION_DAYS,
                 deleted=result["deleted"],
                 deleted_finished=result.get("deleted_finished", 0),
                 vacuumed=result["vacuumed"],
@@ -115,6 +114,17 @@ def maintenance_loop():
             log("db_cleanup_error", error=str(e))
 
         time.sleep(interval_seconds)
+
+
+def reap_stale_tasks_loop():
+    while True:
+        try:
+            reaped = queue.reap_stale_tasks()
+            if reaped > 0:
+                log("stale_tasks_reaped", count=reaped)
+        except Exception as e:
+            log("reap_stale_error", error=str(e))
+        time.sleep(60)
 
 
 def _run_task_with_id(task_id, func, args, kwargs, result_queue):
@@ -382,7 +392,11 @@ def run_worker():
 
     threading.Thread(target=heartbeat, daemon=True).start()
     threading.Thread(target=run_scheduler, daemon=True).start()
-    if RETENTION_DAYS > 0:
+    
+    # We also run stale lock reaping in a separate thread so it happens quickly!
+    threading.Thread(target=reap_stale_tasks_loop, daemon=True).start()
+
+    if config.RETENTION_DAYS > 0:
         threading.Thread(target=maintenance_loop, daemon=True).start()
 
     while True:

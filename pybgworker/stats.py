@@ -41,12 +41,13 @@ def stats(as_json=False):
                 "seconds_ago": None,
             })
             continue
+        from pybgworker import config
         last_seen = datetime.fromisoformat(w[1])
         delta = (now - last_seen).total_seconds()
         worker_list.append({
             "name": w[0],
             "last_seen": w[1],
-            "status": "alive" if delta < 15 else "dead",
+            "status": "alive" if delta < config.WORKER_TIMEOUT else "dead",
             "seconds_ago": int(delta),
         })
 

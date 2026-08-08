@@ -14,6 +14,8 @@ from pybgworker.sqlite_queue import SQLiteQueue
 TEST_DB = "test_pybgworker_policy.db"
 
 def _clear_db(db_path):
+    from pybgworker.sqlite_queue import SQLiteQueue
+    SQLiteQueue(db_path)._init_db()
     from pybgworker.utils import get_conn
     with get_conn(db_path) as conn:
         conn.execute("DELETE FROM tasks")

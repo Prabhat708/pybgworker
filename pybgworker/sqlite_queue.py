@@ -123,9 +123,10 @@ class SQLiteQueue(BaseQueue):
                 if row:
                     return row[0]  # Duplicate — return existing id.
 
+            columns = ",".join(task.keys())
             placeholders = ",".join(["?"] * len(task))
             conn.execute(
-                f"INSERT INTO tasks VALUES ({placeholders})",
+                f"INSERT INTO tasks ({columns}) VALUES ({placeholders})",
                 tuple(task.values())
             )
             conn.commit()
@@ -155,12 +156,33 @@ class SQLiteQueue(BaseQueue):
 
         placeholders = ",".join(["?"] * len(tasks[0]))
         inserted = 0
-
         with get_conn(self.db_path) as conn:
             conn.execute("BEGIN IMMEDIATE")
+            
+            # Map idempotency keys to existing IDs
+            idemp_keys = [t.get("idempotency_key") for t in tasks if t.get("idempotency_key")]
+            key_to_id = {}
+            if idemp_keys:
+                placeholders_in = ",".join(["?"] * len(idemp_keys))
+                rows = conn.execute(
+                    f"SELECT idempotency_key, id FROM tasks WHERE idempotency_key IN ({placeholders_in})",
+                    idemp_keys
+                ).fetchall()
+                for row in rows:
+                    key_to_id[row[0]] = row[1]
+                    
+            columns = ",".join(tasks[0].keys())
+            placeholders = ",".join(["?"] * len(tasks[0]))
+            
             for task in tasks:
+                ik = task.get("idempotency_key")
+                if ik and ik in key_to_id:
+                    # Update the task dict so caller gets the existing ID
+                    task["id"] = key_to_id[ik]
+                    continue
+                    
                 cur = conn.execute(
-                    f"INSERT OR IGNORE INTO tasks VALUES ({placeholders})",
+                    f"INSERT OR IGNORE INTO tasks ({columns}) VALUES ({placeholders})",
                     tuple(task.values())
                 )
                 inserted += cur.rowcount
@@ -171,8 +193,6 @@ class SQLiteQueue(BaseQueue):
     # ---------------- atomic fetch ----------------
 
     def fetch_next(self, worker):
-        stale_time = (now() - timedelta(seconds=WORKER_TIMEOUT)).isoformat()
-
         with get_conn(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
 
@@ -184,17 +204,8 @@ class SQLiteQueue(BaseQueue):
                     updated_at=?
                 WHERE id = (
                     SELECT t.id FROM tasks t
-                    LEFT JOIN workers w ON t.locked_by = w.name
                     WHERE
-                        (
-                            t.status IN ('queued','retrying')
-                            OR
-                            -- Bug 6 fix: treat NULL last_seen (no heartbeat row
-                            -- ever written by that worker) as stale, so ghost
-                            -- locks from workers that crashed before their first
-                            -- heartbeat are reclaimed like any other stale lock.
-                            (t.status='running' AND (w.last_seen IS NULL OR w.last_seen < ?))
-                        )
+                        t.status IN ('queued','retrying')
                     AND t.run_at <= ?
                     ORDER BY t.priority ASC, t.run_at ASC
                     LIMIT 1
@@ -204,18 +215,69 @@ class SQLiteQueue(BaseQueue):
                 worker,
                 now().isoformat(),
                 now().isoformat(),
-                stale_time,
                 now().isoformat()
             )).fetchone()
 
             conn.commit()
             return dict(row) if row else None
 
+    # ---------------- reap stale locks ----------------
+
+    def reap_stale_tasks(self):
+        stale_time = (now() - timedelta(seconds=WORKER_TIMEOUT)).isoformat()
+        reaped_count = 0
+        with get_conn(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            conn.execute("BEGIN IMMEDIATE")
+            
+            # Find all tasks locked by stale workers
+            stale_tasks = conn.execute("""
+                SELECT t.id, t.attempt, t.max_retries 
+                FROM tasks t
+                LEFT JOIN workers w ON t.locked_by = w.name
+                WHERE t.status = 'running'
+                AND (w.last_seen < ? OR (w.last_seen IS NULL AND t.locked_at < ?))
+            """, (stale_time, stale_time)).fetchall()
+            
+            for row in stale_tasks:
+                task_id = row["id"]
+                attempt = row["attempt"]
+                max_retries = row["max_retries"]
+                
+                if attempt < max_retries:
+                    conn.execute("""
+                        UPDATE tasks
+                        SET status='retrying',
+                            attempt=attempt+1,
+                            run_at=?,
+                            updated_at=?,
+                            locked_by=NULL,
+                            locked_at=NULL
+                        WHERE id=?
+                    """, (now().isoformat(), now().isoformat(), task_id))
+                else:
+                    conn.execute("""
+                        UPDATE tasks
+                        SET status='dead',
+                            last_error=?,
+                            finished_at=?,
+                            updated_at=?,
+                            locked_by=NULL,
+                            locked_at=NULL
+                        WHERE id=?
+                    """, ("Worker crashed", now().isoformat(), now().isoformat(), task_id))
+                reaped_count += 1
+                
+            conn.commit()
+            
+        return reaped_count
+
     # ---------------- ack ----------------
 
     def ack(self, task_id):
         with get_conn(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
+            conn.execute("BEGIN IMMEDIATE")
             row = conn.execute("SELECT status FROM tasks WHERE id=?", (task_id,)).fetchone()
             if row:
                 validate_transition(row["status"], "success")
@@ -235,6 +297,7 @@ class SQLiteQueue(BaseQueue):
     def fail(self, task_id, error):
         with get_conn(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
+            conn.execute("BEGIN IMMEDIATE")
             row = conn.execute("SELECT status FROM tasks WHERE id=?", (task_id,)).fetchone()
             if row:
                 validate_transition(row["status"], "failed")
@@ -255,6 +318,7 @@ class SQLiteQueue(BaseQueue):
     def dead(self, task_id, error):
         with get_conn(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
+            conn.execute("BEGIN IMMEDIATE")
             row = conn.execute("SELECT status FROM tasks WHERE id=?", (task_id,)).fetchone()
             if row:
                 validate_transition(row["status"], "dead")
@@ -276,6 +340,7 @@ class SQLiteQueue(BaseQueue):
         run_at = now() + timedelta(seconds=delay)
         with get_conn(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
+            conn.execute("BEGIN IMMEDIATE")
             row = conn.execute("SELECT status FROM tasks WHERE id=?", (task_id,)).fetchone()
             if row:
                 validate_transition(row["status"], "retrying")
@@ -296,6 +361,7 @@ class SQLiteQueue(BaseQueue):
     def cancel(self, task_id):
         with get_conn(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
+            conn.execute("BEGIN IMMEDIATE")
             row = conn.execute("SELECT status FROM tasks WHERE id=?", (task_id,)).fetchone()
             if row:
                 validate_transition(row["status"], "cancelled")

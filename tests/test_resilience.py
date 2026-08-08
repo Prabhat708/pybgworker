@@ -34,6 +34,9 @@ def test_enqueue_resilience(monkeypatch):
         def __exit__(self, exc_type, exc_val, exc_tb):
             self.conn.close()
 
+        def close(self):
+            self.conn.close()
+
     monkeypatch.setattr(sqlite3, "connect", LockedConnection)
 
     with pytest.raises(sqlite3.OperationalError):

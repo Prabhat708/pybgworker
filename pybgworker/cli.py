@@ -52,11 +52,15 @@ def main():
 
     if args.retention_days is not None:
         os.environ["PYBGWORKER_RETENTION_DAYS"] = str(args.retention_days)
+        import pybgworker.config as config
+        config.RETENTION_DAYS = args.retention_days
 
     if args.cleanup_interval_hours is not None:
         os.environ["PYBGWORKER_CLEANUP_INTERVAL_HOURS"] = str(
             args.cleanup_interval_hours
         )
+        import pybgworker.config as config
+        config.CLEANUP_INTERVAL_HOURS = args.cleanup_interval_hours
 
     if args.command == "run":
         if not args.app:

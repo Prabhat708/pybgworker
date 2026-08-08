@@ -21,8 +21,11 @@ def loads(data):
     return json.loads(data)
 
 
+from contextlib import contextmanager
+
+@contextmanager
 def get_conn(db_path=None):
-    """Return a new SQLite connection.
+    """Return a new SQLite connection context manager.
 
     Args:
         db_path: Path to the database file. Defaults to ``config.DB_PATH``
@@ -30,10 +33,20 @@ def get_conn(db_path=None):
                  or ``None``.  Pass an explicit path to use an isolated
                  database — e.g. for tests or multi-tenant setups.
     """
-    conn = sqlite3.connect(db_path or DB_PATH, timeout=30)
+    if db_path is None:
+        db_path = DB_PATH
+    conn = sqlite3.connect(
+        db_path,
+        timeout=30,
+        isolation_level=None,  # We handle transactions manually where needed
+        check_same_thread=False
+    )
 
     # production SQLite settings
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.execute("PRAGMA busy_timeout=30000;")  # wait 30 seconds if locked
 
-    return conn
+    try:
+        yield conn
+    finally:
+        conn.close()
