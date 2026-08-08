@@ -188,8 +188,9 @@ class SQLiteQueue(BaseQueue):
                 for row in rows:
                     key_to_id[row[0]] = row[1]
                     
-            columns = ",".join(tasks[0].keys())
-            placeholders = ",".join(["?"] * len(tasks[0]))
+            keys = list(tasks[0].keys())
+            columns = ",".join(keys)
+            placeholders = ",".join(["?"] * len(keys))
 
             # Also track keys seen for the first time within this batch,
             # so a second item with the same key is remapped to the first's id.
@@ -211,7 +212,7 @@ class SQLiteQueue(BaseQueue):
 
                 cur = conn.execute(
                     f"INSERT OR IGNORE INTO tasks ({columns}) VALUES ({placeholders})",
-                    tuple(task.values())
+                    tuple(task[k] for k in keys)
                 )
                 inserted += cur.rowcount
             conn.commit()
