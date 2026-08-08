@@ -340,7 +340,7 @@ result = res.get()
 result = res.get(timeout=30)   # raises TimeoutError after 30 s
 ```
 
-`get()` raises `TaskFailedError` for failed/dead tasks and `TaskCancelledError` for cancelled tasks.  Both carry `task_id` and `state` attributes.
+`get()` raises `TaskFailedError` for failed/dead tasks and `TaskCancelledError` for cancelled tasks.  Both carry `task_id` and `state` attributes. `TaskFailedError` also includes an `exception_class` attribute parsed from the traceback (e.g., `"TimeoutError"` or `"ValueError"`), enabling programmatic error handling.
 
 ### Cleanup
 
@@ -634,7 +634,7 @@ Timeout protection is applied on every loop iteration.
 If a worker crashes without updating the heartbeat:
 
 1. Task locks expire (after `PYBGWORKER_WORKER_TIMEOUT` seconds)
-2. Tasks are automatically reclaimed by another worker
+2. Tasks are automatically reclaimed by another worker (via a background thread that runs `reap_stale_tasks_loop`)
 3. No manual recovery required
 
 ---

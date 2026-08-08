@@ -18,6 +18,7 @@ It is designed to be simple, reliable, and easy to deploy.
 - Retry + failure handling with `retry_for` exception filtering
 - Task cancellation (queued, running, and retrying tasks)
 - Crash isolation via subprocess
+- Automatic stale task reaping for dead workers
 - Task priority execution
 - Task status tracking
 - Result storage and retrieval
@@ -293,7 +294,7 @@ res.failed()      # True only if "failed"
 res.dead()        # True only if "dead"
 res.cancelled()   # True only if "cancelled"
 
-res.get()         # blocks until done; returns result or raises TaskFailedError
+res.get()         # blocks until done; returns result or raises TaskFailedError (includes exception_class)
 res.get(timeout=30)  # raises TimeoutError after 30 s
 
 res.forget()      # deletes the task row from the database entirely

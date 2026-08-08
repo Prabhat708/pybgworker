@@ -4,9 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ---
 
-## [0.4.0] - 2026-08-07
+## [1.0.0] - 2026-08-08
 
 ### Added
+- **Stale task lock reaping**: Background thread (`reap_stale_tasks_loop`) reclaims tasks locked by dead workers without manual intervention.
+- **Exception Class Capture**: `TaskFailedError` now parses and exposes the `exception_class` from the traceback for programmatic error handling.
 - **Task progress reporting**: `set_progress(percent, message)` writes into a new `progress` DB column; `AsyncResult.progress` reads it back as `{"percent": int, "message": str|None}`.
 - **Bulk / batch enqueue**: `task.delay_many([(args, kwargs), ...])` and `SQLiteQueue.enqueue_many(tasks)` wrap all INSERTs in a single transaction for fast bulk workloads.
 - **Success/failure callbacks**: `@task(on_success=fn, on_failure=fn)` — worker invokes these callables after a terminal state is reached; exceptions are caught and logged.

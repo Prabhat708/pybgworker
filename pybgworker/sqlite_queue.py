@@ -115,7 +115,7 @@ class SQLiteQueue(BaseQueue):
         idempotency_key = task.get("idempotency_key")
         with get_conn(self.db_path) as conn:
             conn.execute("BEGIN IMMEDIATE")
-            if idempotency_key:
+            if idempotency_key is not None:
                 # Check for an existing task with this key first.
                 # BEGIN IMMEDIATE above means no concurrent INSERT can slip in
                 # between this SELECT and our own INSERT below.
@@ -138,7 +138,7 @@ class SQLiteQueue(BaseQueue):
                 # Another concurrent writer beat us to the unique index.
                 # Look up and return the winner's id.
                 conn.execute("ROLLBACK")
-                if idempotency_key:
+                if idempotency_key is not None:
                     row = conn.execute(
                         "SELECT id FROM tasks WHERE idempotency_key=?",
                         (idempotency_key,)
@@ -177,7 +177,7 @@ class SQLiteQueue(BaseQueue):
             conn.execute("BEGIN IMMEDIATE")
             
             # Map idempotency keys to existing IDs
-            idemp_keys = [t.get("idempotency_key") for t in tasks if t.get("idempotency_key")]
+            idemp_keys = [t.get("idempotency_key") for t in tasks if t.get("idempotency_key") is not None]
             key_to_id = {}
             if idemp_keys:
                 placeholders_in = ",".join(["?"] * len(idemp_keys))
@@ -198,7 +198,7 @@ class SQLiteQueue(BaseQueue):
 
             for task in tasks:
                 ik = task.get("idempotency_key")
-                if ik:
+                if ik is not None:
                     if ik in key_to_id:
                         # Existing row in DB — remap this task's id
                         task["id"] = key_to_id[ik]
